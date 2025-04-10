@@ -1,8 +1,11 @@
-FROM balenalib/%%BALENA_MACHINE_NAME%%:buster
+FROM balenalib/%%BALENA_MACHINE_NAME%%:bookworm
 
 COPY ./grafana.ini /usr/share/grafana/conf/custom.ini
 COPY ./provisioning /usr/src/app/provisioning
+COPY ./provisioning /etc/grafana/provisioning
 COPY ./*.sh /usr/src/app/
+# Update system packages
+RUN apt-get update && apt-get upgrade -y 
 RUN chmod +x /usr/src/app/*.sh
 
 RUN install_packages \

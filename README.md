@@ -34,3 +34,31 @@ We recommend this button as the de-facto method for deploying new apps on balena
 Once the software has been deployed and downloaded to your device, the dashboard will be accessible on the local IP address of the device, or via the balenaCloud public URL feature.
 
 ![public-url](https://raw.githubusercontent.com/balenalabs-incubator/background-radiation-monitor/master/assets/public-url.png)
+
+## Raspberry Pi 3 64-bit / balenaCloud
+
+The current release targets **Raspberry Pi 3 (using 64bit OS)** on balenaCloud.
+
+Before deploying, configure the following balenaCloud **Service Variables**:
+
+### influxdb service
+- `DOCKER_INFLUXDB_INIT_PASSWORD`: choose a strong password.
+- `DOCKER_INFLUXDB_INIT_ADMIN_TOKEN`: choose a long random token.
+
+### counter service
+- `INFLUX_TOKEN`: set this to the same value as `DOCKER_INFLUXDB_INIT_ADMIN_TOKEN`.
+
+### grafana service
+- `INFLUX_TOKEN`: set this to the same value as `DOCKER_INFLUXDB_INIT_ADMIN_TOKEN`.
+
+The token and password are intentionally not stored in this repository.
+
+To deploy a new release with the balena CLI:
+
+```sh
+balena login
+balena push g_jo_o_antunes/background-radiation-monitor
+```
+
+The `counter` container reads its InfluxDB connection settings from environment variables and retries writes if InfluxDB is temporarily unavailable during startup.
+

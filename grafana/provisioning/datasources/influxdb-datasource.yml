@@ -2,6 +2,7 @@ apiVersion: 1
 
 datasources:
   - name: InfluxDB
+    uid: influxdb
     type: influxdb
     access: proxy
     isDefault: true
@@ -12,4 +13,4 @@ datasources:
       organization: balena
       defaultBucket: balena-sense
     secureJsonData:
-      token: mysecrettoken
+      token: $INFLUX_TOKEN

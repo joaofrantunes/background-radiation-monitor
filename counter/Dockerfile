@@ -1,19 +1,10 @@
-FROM balenalib/raspberrypi3-debian-python:3.10-bookworm-build
+FROM balenalib/raspberrypi3-64-debian-python:3.10-bookworm-build
 
 WORKDIR /usr/app/src
 
-# Upgrade pip and install virtualenv
-RUN pip install --upgrade pip virtualenv
+RUN pip install --no-cache-dir --upgrade pip \
+    && pip install --no-cache-dir influxdb_client rpi-lgpio
 
-# Create and activate virtual environment
-RUN virtualenv venv
-ENV PATH="/usr/app/src/venv/bin:$PATH"
-
-# Install only needed Python libraries (not GPIO ones!)
-RUN pip install influxdb_client rpi-lgpio spidev lgpio
-
-# Copy Python files
 COPY *.py ./
 
-# Run the script
 CMD ["python", "counter.py"]

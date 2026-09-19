@@ -1,59 +1,64 @@
-import time
 import datetime
+import os
+import time
 from collections import deque
+
 import RPi.GPIO as GPIO
 from influxdb_client import InfluxDBClient, Point, WriteOptions
 
-# ------------------- Config -------------------
 
-# InfluxDB 2.x settings
-url = "http://influxdb:8086"
-token = "mysecrettoken"
-org = "balena"
-bucket = "balena-sense"
+url = os.getenv("INFLUX_URL", "http://influxdb:8086")
+token = os.environ["INFLUX_TOKEN"]
+org = os.getenv("INFLUX_ORG", "balena")
+bucket = os.getenv("INFLUX_BUCKET", "balena-sense")
 
-client = InfluxDBClient(url=url, token=token, org=org)
+client = InfluxDBClient(url=url, token=token, org=org, timeout=10000)
 write_api = client.write_api(write_options=WriteOptions(batch_size=1))
 
-# Geiger counter settings
 PULSE_PIN = 7
-usvh_ratio = 0.00812
+USVH_RATIO = 0.00812
 counts = deque()
 loop_count = 0
-
-# ------------------- Setup -------------------
 
 GPIO.setmode(GPIO.BOARD)
 GPIO.setup(PULSE_PIN, GPIO.IN)
 
+
 def countme(channel):
-    timestamp = datetime.datetime.now()
-    counts.append(timestamp)
+    counts.append(datetime.datetime.now())
+
 
 GPIO.add_event_detect(PULSE_PIN, GPIO.FALLING, callback=countme)
-
-# ------------------- Main Loop -------------------
 
 while True:
     loop_count += 1
 
-    # Remove pulses older than 60 seconds
     now = datetime.datetime.now()
-    while counts and counts[0] < now - datetime.timedelta(seconds=60):
+    cutoff = now - datetime.timedelta(seconds=60)
+
+    while counts and counts[0] < cutoff:
         counts.popleft()
 
     cpm = len(counts)
-    usvh = round(cpm * usvh_ratio, 2)
+    usvh = round(cpm * USVH_RATIO, 2)
 
-    # Every 10 seconds, write to InfluxDB
-    if loop_count == 10:
-        point = Point("balena-sense") \
-            .field("cpm", cpm) \
-            .field("usvh", usvh) \
-            .time(datetime.datetime.utcnow())
+    if loop_count >= 10:
+        point = (
+            Point("balena-sense")
+            .field("cpm", cpm)
+            .field("usvh", usvh)
+            .time(datetime.datetime.now(datetime.timezone.utc))
+        )
 
-        write_api.write(bucket=bucket, org=org, record=point)
-        print(f"[{datetime.datetime.now()}] Sent to InfluxDB → CPM: {cpm}, uSv/h: {usvh}")
+        try:
+            write_api.write(bucket=bucket, org=org, record=point)
+            print(
+                f"[{datetime.datetime.now()}] Sent to InfluxDB -> "
+                f"CPM: {cpm}, uSv/h: {usvh}"
+            )
+        except Exception as exc:
+            print(f"[{datetime.datetime.now()}] InfluxDB write failed: {exc}")
+
         loop_count = 0
 
     time.sleep(1)

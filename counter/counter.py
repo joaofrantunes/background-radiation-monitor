@@ -4,7 +4,8 @@ import time
 from collections import deque
 
 import RPi.GPIO as GPIO
-from influxdb_client import InfluxDBClient, Point, WriteOptions
+from influxdb_client import InfluxDBClient, Point
+from influxdb_client.client.write_api import SYNCHRONOUS
 
 
 url = os.getenv("INFLUX_URL", "http://influxdb:8086")
@@ -13,7 +14,7 @@ org = os.getenv("INFLUX_ORG", "balena")
 bucket = os.getenv("INFLUX_BUCKET", "balena-sense")
 
 client = InfluxDBClient(url=url, token=token, org=org, timeout=10000)
-write_api = client.write_api(write_options=WriteOptions(batch_size=1))
+write_api = client.write_api(write_options=SYNCHRONOUS)
 
 PULSE_PIN = 7
 USVH_RATIO = 0.00812

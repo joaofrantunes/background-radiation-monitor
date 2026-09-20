@@ -17,7 +17,7 @@
   "title": "The Geiger Counter",
   "uid": "pF3gRDiRk",
   "schemaVersion": 25,
-  "version": 3,
+  "version": 4,
   "refresh": "10s",
   "time": {
     "from": "now-12h",
@@ -32,61 +32,104 @@
       "id": 10,
       "type": "gauge",
       "title": "Counts per Minute (CPM)",
-      "gridPos": { "h": 8, "w": 9, "x": 0, "y": 0 },
+      "gridPos": {
+        "h": 8,
+        "w": 9,
+        "x": 0,
+        "y": 0
+      },
       "targets": [
         {
           "refId": "B",
-          "query": "from(bucket: \"balena-sense\") |> range(start: -12h) |> filter(fn: (r) => r._measurement == \"balena-sense\" and r._field == \"cpm\")"
+          "query": "from(bucket: \"balena-sense\") |> range(start: v.timeRangeStart, stop: v.timeRangeStop) |> filter(fn: (r) => r._measurement == \"balena-sense\" and r._field == \"cpm\") |> last()"
         }
-      ]
+      ],
+      "description": "Latest measured counts per minute."
     },
     {
       "id": 12,
       "type": "timeseries",
       "title": "Counts per Minute (CPM)",
-      "gridPos": { "h": 8, "w": 12, "x": 9, "y": 0 },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 9,
+        "y": 0
+      },
       "targets": [
         {
           "refId": "B",
-          "query": "from(bucket: \"balena-sense\") |> range(start: -12h) |> filter(fn: (r) => r._measurement == \"balena-sense\" and r._field == \"cpm\") |> movingAverage(n: 120)"
+          "query": "from(bucket: \"balena-sense\") |> range(start: v.timeRangeStart, stop: v.timeRangeStop) |> filter(fn: (r) => r._measurement == \"balena-sense\" and r._field == \"cpm\") |> movingAverage(n: 120)"
         }
-      ]
+      ],
+      "description": "Moving average of CPM over 120 stored samples (about 20 minutes at a 10-second write interval)."
     },
     {
       "id": 13,
       "type": "gauge",
-      "title": "Micro Sieverts per hour (µSv/h)",
-      "gridPos": { "h": 8, "w": 9, "x": 0, "y": 8 },
+      "title": "Estimated dose rate (µSv/h)",
+      "gridPos": {
+        "h": 8,
+        "w": 9,
+        "x": 0,
+        "y": 8
+      },
       "targets": [
         {
           "refId": "A",
-          "query": "from(bucket: \"balena-sense\") |> range(start: -12h) |> filter(fn: (r) => r._measurement == \"balena-sense\" and r._field == \"usvh\")"
+          "query": "from(bucket: \"balena-sense\") |> range(start: v.timeRangeStart, stop: v.timeRangeStop) |> filter(fn: (r) => r._measurement == \"balena-sense\" and r._field == \"usvh\") |> last()"
         }
-      ]
+      ],
+      "description": "Estimated from CPM using the counter service USVH_RATIO. Use CPM as the primary measurement unless the detector has been calibrated against a reference instrument."
     },
     {
       "id": 14,
       "type": "timeseries",
-      "title": "Micro Sieverts per hour (µSv/h)",
-      "gridPos": { "h": 8, "w": 12, "x": 9, "y": 8 },
+      "title": "Estimated dose rate (µSv/h)",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 9,
+        "y": 8
+      },
       "targets": [
         {
           "refId": "A",
-          "query": "from(bucket: \"balena-sense\") |> range(start: -12h) |> filter(fn: (r) => r._measurement == \"balena-sense\" and r._field == \"cpm\") |> movingAverage(n: 120) |> map(fn: (r) => ({ r with _value: r._value * 0.00812037037037 }))"
+          "query": "from(bucket: \"balena-sense\") |> range(start: v.timeRangeStart, stop: v.timeRangeStop) |> filter(fn: (r) => r._measurement == \"balena-sense\" and r._field == \"usvh\") |> movingAverage(n: 120)"
         }
-      ]
+      ],
+      "description": "Moving average of the stored estimated dose-rate field. This respects the USVH_RATIO configured in the counter and no longer recalculates dose with a hard-coded factor in Grafana."
     }
   ],
   "style": "dark",
   "tags": [],
-  "templating": { "list": [] },
+  "templating": {
+    "list": []
+  },
   "timepicker": {
     "refresh_intervals": [
-      "10s", "30s", "1m", "5m", "15m", "30m", "1h", "2h", "1d"
+      "10s",
+      "30s",
+      "1m",
+      "5m",
+      "15m",
+      "30m",
+      "1h",
+      "2h",
+      "1d"
     ],
     "time_options": [
-      "5m", "15m", "1h", "6h", "12h", "24h", "2d", "7d", "30d"
+      "5m",
+      "15m",
+      "1h",
+      "6h",
+      "12h",
+      "24h",
+      "2d",
+      "7d",
+      "30d"
     ]
   },
-  "timezone": ""
+  "timezone": "",
+  "description": "CPM is the primary detector measurement. µSv/h is an estimate calculated by the counter using its configured USVH_RATIO."
 }

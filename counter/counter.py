@@ -19,7 +19,15 @@ client = InfluxDBClient(url=url, token=token, org=org, timeout=10000)
 write_api = client.write_api(write_options=SYNCHRONOUS)
 
 PULSE_PIN = 7
-USVH_RATIO = float(os.getenv("USVH_RATIO", "0.00812"))
+
+# Default for a modern J305 glass tube specified at 44 CPS/(mR/h) with Co-60.
+# This is an estimate, not a substitute for calibration against a reference meter.
+# Reference:
+# https://iot-devices.com.ua/en/geiger-tube-j305-how-to-calculate-the-conversion-factor-of-cpm-technical-note-en/
+DEFAULT_USVH_RATIO = 0.00332
+USVH_RATIO = float(os.getenv("USVH_RATIO", str(DEFAULT_USVH_RATIO)))
+GEIGER_TUBE_MODEL = os.getenv("GEIGER_TUBE_MODEL", "J305")
+
 counts = deque()
 counts_lock = threading.Lock()
 loop_count = 0
@@ -43,6 +51,12 @@ GPIO.add_event_detect(PULSE_PIN, GPIO.FALLING, callback=countme)
 signal.signal(signal.SIGTERM, request_shutdown)
 signal.signal(signal.SIGINT, request_shutdown)
 
+print(
+    "Counter configuration -> "
+    f"tube={GEIGER_TUBE_MODEL}, "
+    f"CPM-to-uSv/h ratio={USVH_RATIO:.8f}"
+)
+
 try:
     while running:
         loop_count += 1
@@ -61,6 +75,8 @@ try:
                 Point("balena-sense")
                 .field("cpm", cpm)
                 .field("usvh", usvh)
+                .field("usvh_ratio", USVH_RATIO)
+                .field("tube_model", GEIGER_TUBE_MODEL)
                 .time(datetime.datetime.now(datetime.timezone.utc))
             )
 
@@ -68,7 +84,7 @@ try:
                 write_api.write(bucket=bucket, org=org, record=point)
                 print(
                     f"[{datetime.datetime.now()}] Sent to InfluxDB -> "
-                    f"CPM: {cpm}, uSv/h: {usvh:.2f}"
+                    f"CPM: {cpm}, estimated uSv/h: {usvh:.3f}"
                 )
             except Exception as exc:
                 print(f"[{datetime.datetime.now()}] InfluxDB write failed: {exc}")

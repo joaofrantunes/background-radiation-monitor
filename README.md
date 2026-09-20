@@ -47,6 +47,7 @@ Before deploying, configure the following balenaCloud **Service Variables**:
 
 ### counter service
 - `INFLUX_TOKEN`: set this to the same value as `DOCKER_INFLUXDB_INIT_ADMIN_TOKEN`.
+- `USVH_RATIO` (optional): conversion factor from CPM to µSv/h. Defaults to `0.00812`.
 
 ### grafana service
 - `INFLUX_TOKEN`: set this to the same value as `DOCKER_INFLUXDB_INIT_ADMIN_TOKEN`.

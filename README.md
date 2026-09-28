@@ -26,11 +26,11 @@ In this configuration you only need to provide 5 volt power to one of the two bo
 
 The Raspberry Pi GPIO is a **3.3 V input**. A software pull-up does not convert a 5 V detector output to 3.3 V. Before connecting a detector output directly to the Pi, verify the logic-level voltage with respect to the common GND and use a suitable divider/level shifter if required. Do not probe the detector high-voltage section with ordinary GPIO equipment.
 
-The counter defaults to a pull-up input and falling-edge detection, which is appropriate for many active-low/open-collector Geiger boards:
+The counter defaults to no internal pull resistor and falling-edge detection. This preserves the original input behavior that was known to count correctly with the project hardware. Enable an internal pull-up only after confirming that the detector output is compatible with it:
 
 ```text
 PULSE_PIN=7
-GPIO_PULL=up
+GPIO_PULL=off
 GPIO_EDGE=falling
 ```
 
@@ -46,6 +46,13 @@ The counter does **not** silently discard unusual pulses. Instead it records dia
 - `signal_warning`: diagnostic text such as `NO_PULSES`, `HIGH_CPM`, or `POSSIBLE_MAINS_INTERFERENCE`.
 
 A low-variation periodic signal around 45–65 Hz is flagged as possible mains-frequency interference. This is a diagnostic warning only; the raw CPM is still stored.
+
+
+### GPIO compatibility note for v1.3.1
+
+Version 1.3.0 introduced an internal pull-up as the default GPIO input configuration. On some detector boards this can suppress or alter the pulse signal. Version 1.3.1 restores the original neutral input configuration by making `GPIO_PULL=off` the default while keeping all signal diagnostics available.
+
+If a board is known to expose an open-collector/active-low output and requires a pull-up, set `GPIO_PULL=up` explicitly as a balenaCloud service variable after verifying that the signal voltage is safe for a 3.3 V Raspberry Pi GPIO.
 
 ## Software setup
 
@@ -103,7 +110,7 @@ Before deploying, configure the following balenaCloud **Service Variables**:
 - `USVH_RATIO` (optional): conversion factor from CPM to estimated µSv/h. Defaults to `0.00332` for the modern J305 glass-tube specification discussed below.
 - `GEIGER_TUBE_MODEL` (optional): tube model stored with each measurement. Defaults to `J305`.
 - `PULSE_PIN` (optional): physical BOARD pin used for the pulse input. Defaults to `7`.
-- `GPIO_PULL` (optional): `up`, `down`, or `off`. Defaults to `up`.
+- `GPIO_PULL` (optional): `up`, `down`, or `off`. Defaults to `off` to preserve the original working input behavior.
 - `GPIO_EDGE` (optional): `falling` or `rising`. Defaults to `falling`.
 - `NO_PULSE_WARNING_SECONDS` (optional): time with no pulses before a diagnostic warning. Defaults to `300`.
 - `HIGH_CPM_WARNING` (optional): CPM threshold for a high-count diagnostic warning. Defaults to `1000`.

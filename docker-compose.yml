@@ -47,7 +47,7 @@ services:
     ports:
       - "80:80"
     environment:
-      BRM_VERSION: '1.8.0'
+      BRM_VERSION: '1.8.1'
     healthcheck:
       test:
         - CMD-SHELL

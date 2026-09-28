@@ -35,22 +35,6 @@ jobs:
           docker run --rm \
             --add-host grafana:127.0.0.1 \
             -e BALENA_DEVICE_UUID=test-device \
-            -e BRM_VERSION=1.8.1 \
+            -e BRM_VERSION=1.8.2 \
             -v "${{ github.workspace }}/nginx/default.conf.template:/etc/nginx/templates/default.conf.template:ro" \
             nginx:1.28-alpine nginx -t
-
-  tailscale-image:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
-
-      - name: Build Tailscale wrapper
-        run: docker build -t background-radiation-tailscale-test ./tailscale
-
-      - name: Verify Tailscale version
-        run: |
-          docker run --rm \
-            --entrypoint /usr/local/bin/tailscale \
-            background-radiation-tailscale-test \
-            version

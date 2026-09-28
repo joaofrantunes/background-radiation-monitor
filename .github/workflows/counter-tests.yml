@@ -35,6 +35,22 @@ jobs:
           docker run --rm \
             --add-host grafana:127.0.0.1 \
             -e BALENA_DEVICE_UUID=test-device \
-            -e BRM_VERSION=1.6.1 \
+            -e BRM_VERSION=1.7.0 \
             -v "${{ github.workspace }}/nginx/default.conf.template:/etc/nginx/templates/default.conf.template:ro" \
             nginx:1.28-alpine nginx -t
+
+  cloudflared-image:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Build Cloudflare Tunnel wrapper
+        run: docker build -t background-radiation-cloudflared-test ./cloudflared
+
+      - name: Verify cloudflared binary
+        run: |
+          docker run --rm \
+            --entrypoint /usr/local/bin/cloudflared \
+            background-radiation-cloudflared-test \
+            version

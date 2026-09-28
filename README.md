@@ -177,6 +177,48 @@ Version 1.6.1 adds device-aware diagnostics to the Nginx front end without chang
 
 The device UUID shown by `/device-info` can be compared with the UUID in the balena Public Device URL. This is useful when an old or different device URL is being used.
 
+
+## Resilient external access with Cloudflare Tunnel in v1.7.0
+
+Version 1.7.0 adds an **optional Cloudflare Tunnel** alongside the existing balena Public Device URL. The balena URL remains available for administration and fallback; the Cloudflare hostname can be used as the main public dashboard address when more persistent external access is required.
+
+The architecture is:
+
+```text
+                           +--> balena Public Device URL
+Internet -----------------|
+                           +--> Cloudflare Tunnel
+                                   |
+                              cloudflared
+                                   |
+                                web:80
+                                   |
+                             Nginx reverse proxy
+                                   |
+                              Grafana :3000
+```
+
+The Cloudflare connector uses the official `cloudflared 2026.9.1` binary, which has ARM64 support and runs without opening inbound router ports. If no tunnel token is configured, the service stays idle and the rest of the application continues to run normally.
+
+Cloudflare recommends remotely managed tunnels for Docker deployments. To enable the tunnel:
+
+1. In the Cloudflare dashboard, create a remotely managed Tunnel under **Networking > Tunnels**.
+2. Add a **Published application** route for the hostname you want to use.
+3. Set the route's origin/service URL to `http://web:80`. Do **not** use `localhost:80`, because `cloudflared` runs in its own container.
+4. Copy the tunnel token from **Add a replica**.
+5. In balenaCloud, create the `CLOUDFLARE_TUNNEL_TOKEN` service variable for the **cloudflared** service. Treat this token as a secret and do not commit it to Git or paste it into logs/chat.
+6. Restart or redeploy the `cloudflared` service.
+
+Optional service variable:
+
+- `CLOUDFLARE_LOGLEVEL`: defaults to `info`.
+
+The connector exposes its Prometheus metrics internally on port `2000` and uses that endpoint for its container healthcheck. It does not publish this port to the LAN or Internet.
+
+Recent `cloudflared` versions also run connectivity pre-checks at startup. If the network blocks both QUIC and HTTP/2 connectivity to Cloudflare on outbound port `7844`, the connector reports the problem in its logs. The local dashboard and balena Public Device URL remain independent of the optional Cloudflare service.
+
+If the Cloudflare hostname should not be public, protect it with Cloudflare Access rather than relying only on Grafana's anonymous Viewer mode.
+
 ## Access the dashboard
 
 Once the software has been deployed and downloaded to your device, Nginx listens on port 80 and proxies the dashboard to Grafana on its internal port 3000. The dashboard is accessible on the local IP address of the device, or via the balenaCloud public URL feature.
@@ -212,7 +254,11 @@ Before deploying, configure the following balenaCloud **Service Variables**:
 ### grafana service
 - `INFLUX_TOKEN`: set this to the same value as `DOCKER_INFLUXDB_INIT_ADMIN_TOKEN`.
 
-The token and password are intentionally not stored in this repository.
+### cloudflared service
+- `CLOUDFLARE_TUNNEL_TOKEN` (optional): secret token for a remotely managed Cloudflare Tunnel. If it is not set, Cloudflare Tunnel stays disabled and the application continues to work through local access and the balena Public Device URL.
+- `CLOUDFLARE_LOGLEVEL` (optional): Cloudflare Tunnel log level. Defaults to `info`.
+
+The InfluxDB token/password and Cloudflare Tunnel token are intentionally not stored in this repository.
 
 To deploy a new release with the balena CLI:
 

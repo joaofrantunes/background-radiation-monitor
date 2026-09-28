@@ -14,10 +14,10 @@
   },
   "editable": true,
   "id": 1,
-  "title": "The Geiger Counter",
+  "title": "Background Radiation Monitor — J305",
   "uid": "pF3gRDiRk",
   "schemaVersion": 25,
-  "version": 5,
+  "version": 6,
   "refresh": "10s",
   "time": {
     "from": "now-12h",
@@ -49,7 +49,7 @@
     {
       "id": 12,
       "type": "timeseries",
-      "title": "Counts per Minute (CPM)",
+      "title": "CPM — raw and 5-minute mean",
       "gridPos": {
         "h": 8,
         "w": 12,
@@ -59,10 +59,16 @@
       "targets": [
         {
           "refId": "B",
-          "query": "from(bucket: \"balena-sense\") |> range(start: v.timeRangeStart, stop: v.timeRangeStop) |> filter(fn: (r) => r._measurement == \"balena-sense\" and r._field == \"cpm\") |> movingAverage(n: 120)"
+          "legendFormat": "CPM raw",
+          "query": "from(bucket: \"balena-sense\") |> range(start: v.timeRangeStart, stop: v.timeRangeStop) |> filter(fn: (r) => r._measurement == \"balena-sense\" and r._field == \"cpm\")"
+        },
+        {
+          "refId": "E",
+          "legendFormat": "CPM 5 min mean",
+          "query": "from(bucket: \"balena-sense\") |> range(start: v.timeRangeStart, stop: v.timeRangeStop) |> filter(fn: (r) => r._measurement == \"balena-sense\" and r._field == \"cpm\") |> aggregateWindow(every: 5m, fn: mean, createEmpty: false)"
         }
       ],
-      "description": "Moving average of CPM over 120 stored samples (about 20 minutes at a 10-second write interval)."
+      "description": "Raw CPM plus a 5-minute mean. The raw series preserves fast changes; the mean makes the background trend easier to read."
     },
     {
       "id": 13,
@@ -85,7 +91,7 @@
     {
       "id": 14,
       "type": "timeseries",
-      "title": "Estimated dose rate (µSv/h)",
+      "title": "Estimated dose rate — raw and 5-minute mean (µSv/h)",
       "gridPos": {
         "h": 8,
         "w": 12,
@@ -95,10 +101,16 @@
       "targets": [
         {
           "refId": "A",
-          "query": "from(bucket: \"balena-sense\") |> range(start: v.timeRangeStart, stop: v.timeRangeStop) |> filter(fn: (r) => r._measurement == \"balena-sense\" and r._field == \"usvh\") |> movingAverage(n: 120)"
+          "legendFormat": "Estimated µSv/h raw",
+          "query": "from(bucket: \"balena-sense\") |> range(start: v.timeRangeStart, stop: v.timeRangeStop) |> filter(fn: (r) => r._measurement == \"balena-sense\" and r._field == \"usvh\")"
+        },
+        {
+          "refId": "F",
+          "legendFormat": "Estimated µSv/h 5 min mean",
+          "query": "from(bucket: \"balena-sense\") |> range(start: v.timeRangeStart, stop: v.timeRangeStop) |> filter(fn: (r) => r._measurement == \"balena-sense\" and r._field == \"usvh\") |> aggregateWindow(every: 5m, fn: mean, createEmpty: false)"
         }
       ],
-      "description": "Moving average of the stored estimated dose-rate field. This respects the USVH_RATIO configured in the counter and no longer recalculates dose with a hard-coded factor in Grafana."
+      "description": "Stored estimated dose rate plus a 5-minute mean. The value is not a calibrated dose measurement unless the complete detector has been calibrated."
     },
     {
       "id": 15,
@@ -121,20 +133,110 @@
     {
       "id": 16,
       "type": "stat",
-      "title": "Signal anomaly (0=OK, 1=check)",
+      "title": "Detector status",
       "gridPos": {
         "h": 7,
-        "w": 9,
+        "w": 6,
         "x": 12,
         "y": 16
       },
       "targets": [
         {
           "refId": "D",
-          "query": "from(bucket: \"balena-sense\") |> range(start: v.timeRangeStart, stop: v.timeRangeStop) |> filter(fn: (r) => r._measurement == \"balena-sense\" and r._field == \"signal_anomaly\") |> last()"
+          "query": "from(bucket: \"balena-sense\") |> range(start: v.timeRangeStart, stop: v.timeRangeStop) |> filter(fn: (r) => r._measurement == \"balena-sense\" and r._field == \"detector_status\") |> last()"
         }
       ],
-      "description": "Diagnostic flag only. A value of 1 means the counter detected no pulses for too long, a very high CPM value, or a low-variation periodic signal around mains frequency."
+      "description": "Current detector state. WARMUP is expected during the first minute after startup; NO_PULSES can indicate a disconnected or bad signal contact."
+    },
+    {
+      "id": 17,
+      "type": "stat",
+      "title": "Last pulse age (s)",
+      "gridPos": {
+        "h": 7,
+        "w": 6,
+        "x": 18,
+        "y": 16
+      },
+      "targets": [
+        {
+          "refId": "G",
+          "query": "from(bucket: \"balena-sense\") |> range(start: v.timeRangeStart, stop: v.timeRangeStop) |> filter(fn: (r) => r._measurement == \"balena-sense\" and r._field == \"last_pulse_age_s\") |> last()"
+        }
+      ],
+      "description": "Seconds since the most recent detected pulse. A steadily increasing value is useful for spotting a disconnected or bad contact."
+    },
+    {
+      "id": 18,
+      "type": "stat",
+      "title": "Calibration status",
+      "gridPos": {
+        "h": 6,
+        "w": 6,
+        "x": 0,
+        "y": 23
+      },
+      "targets": [
+        {
+          "refId": "H",
+          "query": "from(bucket: \"balena-sense\") |> range(start: v.timeRangeStart, stop: v.timeRangeStop) |> filter(fn: (r) => r._measurement == \"balena-sense\" and r._field == \"calibration_status\") |> last()"
+        }
+      ],
+      "description": "UNCALIBRATED by default. Change CALIBRATION_STATUS only after calibrating the complete detector against a suitable reference instrument."
+    },
+    {
+      "id": 19,
+      "type": "stat",
+      "title": "CPM → µSv/h factor",
+      "gridPos": {
+        "h": 6,
+        "w": 6,
+        "x": 6,
+        "y": 23
+      },
+      "targets": [
+        {
+          "refId": "I",
+          "query": "from(bucket: \"balena-sense\") |> range(start: v.timeRangeStart, stop: v.timeRangeStop) |> filter(fn: (r) => r._measurement == \"balena-sense\" and r._field == \"usvh_ratio\") |> last()"
+        }
+      ],
+      "description": "Current USVH_RATIO used for the estimated dose-rate field."
+    },
+    {
+      "id": 20,
+      "type": "stat",
+      "title": "Pulse total since start",
+      "gridPos": {
+        "h": 6,
+        "w": 6,
+        "x": 12,
+        "y": 23
+      },
+      "targets": [
+        {
+          "refId": "J",
+          "query": "from(bucket: \"balena-sense\") |> range(start: v.timeRangeStart, stop: v.timeRangeStop) |> filter(fn: (r) => r._measurement == \"balena-sense\" and r._field == \"pulse_total\") |> last()"
+        }
+      ],
+      "description": "Total pulses observed by the counter process since its last start."
+    },
+    {
+      "id": 21,
+      "type": "stat",
+      "title": "Counter uptime (s)",
+      "gridPos": {
+        "h": 6,
+        "w": 6,
+        "x": 18,
+        "y": 23
+      },
+      "targets": [
+        {
+          "refId": "K",
+          "query": "from(bucket: \"balena-sense\") |> range(start: v.timeRangeStart, stop: v.timeRangeStop) |> filter(fn: (r) => r._measurement == \"balena-sense\" and r._field == \"uptime_s\") |> last()"
+        }
+      ],
+      "description": "Counter-process uptime in seconds. A reset to a small value indicates the counter service restarted."
     }
   ],
   "style": "dark",
@@ -167,5 +269,5 @@
     ]
   },
   "timezone": "",
-  "description": "CPM is the primary detector measurement. µSv/h is an estimate. Diagnostic panels help identify missing pulses, high count rates and periodic electrical interference."
+  "description": "J305 background-radiation monitor. CPM is the primary detector measurement; µSv/h remains an estimate until the complete detector is calibrated. Diagnostic panels highlight signal/contact problems."
 }

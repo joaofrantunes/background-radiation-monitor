@@ -54,6 +54,27 @@ Version 1.3.0 introduced an internal pull-up as the default GPIO input configura
 
 If a board is known to expose an open-collector/active-low output and requires a pull-up, set `GPIO_PULL=up` explicitly as a balenaCloud service variable after verifying that the signal voltage is safe for a 3.3 V Raspberry Pi GPIO.
 
+
+## Monitoring and diagnostics in v1.4.0
+
+Version 1.4.0 keeps the known-working GPIO defaults from v1.3.1 and adds monitoring intended to make wiring/contact faults visible much sooner.
+
+The counter now records:
+
+- `last_pulse_age_s`: seconds since the most recent pulse.
+- `pulse_total`: total pulses detected since the counter process started.
+- `uptime_s`: counter-process uptime.
+- `counter_ready`: `0` during the initial warm-up window and `1` afterwards.
+- `detector_status`: textual state such as `WARMUP`, `OK`, `NO_PULSES`, `HIGH_CPM`, or `POSSIBLE_MAINS_INTERFERENCE`.
+- `write_failures_total`: cumulative failed InfluxDB write attempts since startup.
+- `calibration_status`: defaults to `UNCALIBRATED`.
+
+A 60-second warm-up avoids interpreting the partially filled rolling CPM window immediately after a restart as a stable one-minute count. Unusual pulses are still preserved; the diagnostics do not silently remove them.
+
+InfluxDB writes now use a small, bounded retry loop. GPIO pulse collection continues independently while the main loop retries a failed database write.
+
+The Grafana dashboard is renamed **Background Radiation Monitor — J305** and now shows raw plus 5-minute mean trends, textual detector status, last-pulse age, calibration status, the current CPM-to-µSv/h factor, total pulses, and counter uptime.
+
 ## Software setup
 
 Running this project is as simple as deploying it to a balenaCloud application, then downloading the OS image from the dashboard and flashing your SD card.
@@ -114,6 +135,11 @@ Before deploying, configure the following balenaCloud **Service Variables**:
 - `GPIO_EDGE` (optional): `falling` or `rising`. Defaults to `falling`.
 - `NO_PULSE_WARNING_SECONDS` (optional): time with no pulses before a diagnostic warning. Defaults to `300`.
 - `HIGH_CPM_WARNING` (optional): CPM threshold for a high-count diagnostic warning. Defaults to `1000`.
+- `WARMUP_SECONDS` (optional): startup warm-up before the rolling CPM window is considered ready. Defaults to `60`.
+- `WRITE_INTERVAL_SECONDS` (optional): interval between stored measurements. Defaults to `10`.
+- `INFLUX_WRITE_RETRIES` (optional): bounded write attempts per measurement. Defaults to `3`.
+- `INFLUX_RETRY_DELAY_SECONDS` (optional): base retry delay in seconds. Defaults to `1.0`.
+- `CALIBRATION_STATUS` (optional): text stored with the measurements. Defaults to `UNCALIBRATED`.
 
 ### grafana service
 - `INFLUX_TOKEN`: set this to the same value as `DOCKER_INFLUXDB_INIT_ADMIN_TOKEN`.
@@ -127,5 +153,5 @@ balena login
 balena push g_jo_o_antunes/background-radiation-monitor
 ```
 
-The `counter` container reads its InfluxDB connection settings from environment variables. Writes are synchronous, so a success message is printed only after InfluxDB accepts the write; transient failures are logged and the next measurement cycle attempts another write.
+The `counter` container reads its InfluxDB connection settings from environment variables. Writes are synchronous and use a bounded retry loop, so a success message is printed only after InfluxDB accepts the write. Failed attempts are logged and counted without silently changing the pulse data.
 

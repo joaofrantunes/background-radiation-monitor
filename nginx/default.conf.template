@@ -15,10 +15,19 @@ server {
     keepalive_timeout 65;
     client_max_body_size 10m;
 
+    add_header X-BRM-Version "${BRM_VERSION}" always;
+    add_header X-BRM-Device-UUID "${BALENA_DEVICE_UUID}" always;
+
     location = /healthz {
         access_log off;
         default_type text/plain;
         return 200 "ok\n";
+    }
+
+    location = /device-info {
+        access_log off;
+        default_type application/json;
+        return 200 '{"application":"background-radiation-monitor","version":"${BRM_VERSION}","device_uuid":"${BALENA_DEVICE_UUID}","frontend":"nginx","grafana_upstream":"grafana:3000"}\n';
     }
 
     location = /grafana-health {
@@ -28,9 +37,27 @@ server {
         proxy_set_header Host $http_host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Host $http_host;
         proxy_set_header X-Forwarded-Proto $forwarded_proto;
         proxy_connect_timeout 5s;
         proxy_read_timeout 10s;
+    }
+
+    location = /api/ds/query {
+        proxy_pass http://grafana:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Host $http_host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Host $http_host;
+        proxy_set_header X-Forwarded-Proto $forwarded_proto;
+        proxy_connect_timeout 10s;
+        proxy_read_timeout 120s;
+        proxy_send_timeout 120s;
+        proxy_buffering off;
+
+        proxy_intercept_errors on;
+        error_page 502 503 504 = @grafana_unavailable;
     }
 
     location /api/live/ {
@@ -39,6 +66,7 @@ server {
         proxy_set_header Host $http_host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Host $http_host;
         proxy_set_header X-Forwarded-Proto $forwarded_proto;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection $connection_upgrade;
@@ -57,6 +85,7 @@ server {
         proxy_set_header Host $http_host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Host $http_host;
         proxy_set_header X-Forwarded-Proto $forwarded_proto;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection $connection_upgrade;
@@ -71,6 +100,8 @@ server {
     location @grafana_unavailable {
         default_type text/plain;
         add_header Retry-After 10 always;
+        add_header X-BRM-Version "${BRM_VERSION}" always;
+        add_header X-BRM-Device-UUID "${BALENA_DEVICE_UUID}" always;
         return 503 "Grafana is starting or temporarily unavailable. Retry shortly.\n";
     }
 }

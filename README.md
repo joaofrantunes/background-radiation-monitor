@@ -163,6 +163,20 @@ If Grafana is temporarily unavailable, Nginx returns HTTP 503 with a short retry
 
 The public dashboard remains available at the device's normal balena Public Device URL or local IP address. No router port-forwarding is required for the balena Public Device URL.
 
+
+### External-access diagnostics in v1.6.1
+
+Version 1.6.1 adds device-aware diagnostics to the Nginx front end without changing Grafana, InfluxDB, GPIO, or radiation measurements.
+
+- `/healthz` still returns `ok`.
+- `/grafana-health` still checks Grafana itself.
+- `/device-info` now returns JSON containing the running application version and the balena device UUID seen by the container.
+- Every Nginx response includes `X-BRM-Version` and `X-BRM-Device-UUID` response headers.
+- `/api/ds/query` disables Nginx response buffering, avoiding large Grafana/Influx query responses being written to temporary proxy files on the SD card.
+- `X-Forwarded-Host` is now forwarded explicitly to Grafana.
+
+The device UUID shown by `/device-info` can be compared with the UUID in the balena Public Device URL. This is useful when an old or different device URL is being used.
+
 ## Access the dashboard
 
 Once the software has been deployed and downloaded to your device, Nginx listens on port 80 and proxies the dashboard to Grafana on its internal port 3000. The dashboard is accessible on the local IP address of the device, or via the balenaCloud public URL feature.

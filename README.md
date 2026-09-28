@@ -21,6 +21,32 @@ There are 3 connections we need to make from the radiation detector board to the
 
 In this configuration you only need to provide 5 volt power to one of the two boards; if you’re powering the Pi with a standard micro-USB power supply, that will power the detector board via the connections we’ve just made, as well.
 
+
+### GPIO signal safety and diagnostics
+
+The Raspberry Pi GPIO is a **3.3 V input**. A software pull-up does not convert a 5 V detector output to 3.3 V. Before connecting a detector output directly to the Pi, verify the logic-level voltage with respect to the common GND and use a suitable divider/level shifter if required. Do not probe the detector high-voltage section with ordinary GPIO equipment.
+
+The counter defaults to a pull-up input and falling-edge detection, which is appropriate for many active-low/open-collector Geiger boards:
+
+```text
+PULSE_PIN=7
+GPIO_PULL=up
+GPIO_EDGE=falling
+```
+
+If the detector output uses a different interface, these values can be changed as balenaCloud service variables after confirming the board's electrical behavior.
+
+The counter does **not** silently discard unusual pulses. Instead it records diagnostic fields so electrical noise can be distinguished from a genuine count-rate increase:
+
+- `cps`: pulses observed during the most recent one-second window.
+- `gpio_level`: sampled GPIO logic level.
+- `pattern_hz`: estimated repetition frequency from recent pulse intervals.
+- `pattern_cv`: coefficient of variation of the recent pulse intervals.
+- `signal_anomaly`: `0` when no software warning is active, otherwise `1`.
+- `signal_warning`: diagnostic text such as `NO_PULSES`, `HIGH_CPM`, or `POSSIBLE_MAINS_INTERFERENCE`.
+
+A low-variation periodic signal around 45–65 Hz is flagged as possible mains-frequency interference. This is a diagnostic warning only; the raw CPM is still stored.
+
 ## Software setup
 
 Running this project is as simple as deploying it to a balenaCloud application, then downloading the OS image from the dashboard and flashing your SD card.
@@ -76,6 +102,11 @@ Before deploying, configure the following balenaCloud **Service Variables**:
 - `INFLUX_TOKEN`: set this to the same value as `DOCKER_INFLUXDB_INIT_ADMIN_TOKEN`.
 - `USVH_RATIO` (optional): conversion factor from CPM to estimated µSv/h. Defaults to `0.00332` for the modern J305 glass-tube specification discussed below.
 - `GEIGER_TUBE_MODEL` (optional): tube model stored with each measurement. Defaults to `J305`.
+- `PULSE_PIN` (optional): physical BOARD pin used for the pulse input. Defaults to `7`.
+- `GPIO_PULL` (optional): `up`, `down`, or `off`. Defaults to `up`.
+- `GPIO_EDGE` (optional): `falling` or `rising`. Defaults to `falling`.
+- `NO_PULSE_WARNING_SECONDS` (optional): time with no pulses before a diagnostic warning. Defaults to `300`.
+- `HIGH_CPM_WARNING` (optional): CPM threshold for a high-count diagnostic warning. Defaults to `1000`.
 
 ### grafana service
 - `INFLUX_TOKEN`: set this to the same value as `DOCKER_INFLUXDB_INIT_ADMIN_TOKEN`.

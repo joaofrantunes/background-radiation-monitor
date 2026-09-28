@@ -135,9 +135,37 @@ The software keeps `USVH_RATIO` configurable so a measured calibration factor ca
 - Choi et al. (2026), **“Application of a low-cost Geiger–Müller monitoring system for clinical radiation environments”**, Journal of Applied Clinical Medical Physics: https://pmc.ncbi.nlm.nih.gov/articles/PMC13473700/
 - InfluxData Python client documentation for synchronous writes: https://docs.influxdata.com/influxdb/cloud/api-guide/client-libraries/python/
 
+
+## External access and reverse proxy in v1.6.0
+
+Version 1.6.0 places a small Nginx reverse proxy in front of Grafana:
+
+```text
+balena Public Device URL / local port 80
+                 |
+                 v
+             Nginx :80
+              |   |
+      /healthz    +--> Grafana :3000
+                         |
+                         v
+                    InfluxDB :8086
+```
+
+Grafana no longer binds directly to host port 80. Nginx owns port 80 and proxies normal HTTP traffic and Grafana Live WebSocket traffic to the internal `grafana:3000` service. This gives the device a lightweight web listener that can remain available while Grafana is restarting.
+
+Two health endpoints are available:
+
+- `/healthz`: served directly by Nginx and returns HTTP 200 when the front-end proxy is alive.
+- `/grafana-health`: proxies Grafana's `/api/health` endpoint and verifies the application itself is responding.
+
+If Grafana is temporarily unavailable, Nginx returns HTTP 503 with a short retry message instead of dropping the connection. Docker/balena healthchecks are also configured for both the Nginx and Grafana services.
+
+The public dashboard remains available at the device's normal balena Public Device URL or local IP address. No router port-forwarding is required for the balena Public Device URL.
+
 ## Access the dashboard
 
-Once the software has been deployed and downloaded to your device, the dashboard will be accessible on the local IP address of the device, or via the balenaCloud public URL feature.
+Once the software has been deployed and downloaded to your device, Nginx listens on port 80 and proxies the dashboard to Grafana on its internal port 3000. The dashboard is accessible on the local IP address of the device, or via the balenaCloud public URL feature.
 
 ![public-url](https://raw.githubusercontent.com/balenalabs-incubator/background-radiation-monitor/master/assets/public-url.png)
 

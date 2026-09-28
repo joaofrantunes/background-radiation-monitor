@@ -178,62 +178,6 @@ Version 1.6.1 adds device-aware diagnostics to the Nginx front end without chang
 The device UUID shown by `/device-info` can be compared with the UUID in the balena Public Device URL. This is useful when an old or different device URL is being used.
 
 
-## Stable private remote access with Tailscale in v1.8.0
-
-Version 1.8.0 uses **Tailscale private networking** for stable remote dashboard access without a public domain or router port forwarding.
-
-The architecture is:
-
-```text
-PC / phone with Tailscale
-          |
-       tailnet
-          |
- Raspberry Pi / Tailscale
-          |
-      Nginx :80
-          |
-    Grafana :3000
-```
-
-The local-IP access and balena Public Device URL remain available. Tailscale is an additional access path and does not depend on balena Cloudlink for dashboard traffic.
-
-The Tailscale client is pinned to `tailscale/tailscale:v1.102.5`, uses kernel networking with `/dev/net/tun`, and persists its identity in the `tailscale-data` volume. `TS_AUTH_ONCE=true` prevents unnecessary re-authentication once state exists.
-
-### Enable Tailscale on the Raspberry Pi
-
-1. Create or sign in to a Tailscale account.
-2. In the Tailscale admin console, generate an auth key.
-3. In balenaCloud, add `TS_AUTHKEY` as a **Device service variable** for the `tailscale` service. Treat it as a secret: do not commit it to GitHub or paste it into logs/chat.
-4. Restart the `tailscale` service.
-5. Install Tailscale on the PC or phone that will access the dashboard and sign in to the same tailnet.
-6. In the Tailscale Machines page, find the Raspberry Pi and note its Tailscale IP or MagicDNS name.
-7. Open the Grafana dashboard through:
-
-```text
-http://<TAILSCALE-IP>/
-```
-
-or, when MagicDNS is enabled in the tailnet:
-
-```text
-http://<TAILSCALE-HOSTNAME>/
-```
-
-The Nginx diagnostics are available through the same private address:
-
-```text
-http://<TAILSCALE-IP>/healthz
-http://<TAILSCALE-IP>/grafana-health
-http://<TAILSCALE-IP>/device-info
-```
-
-If `TS_AUTHKEY` is not set and the peer has never been enrolled, the Tailscale service stays idle so it does not disrupt the Geiger monitor.
-
-Optional Tailscale service variables include `TS_HOSTNAME`, `TS_ACCEPT_DNS`, and `TS_EXTRA_ARGS`. By default, the application derives a hostname from the balena device UUID, persists state in `/var/lib/tailscale`, and uses kernel TUN networking.
-
-This setup does not expose Grafana publicly. Access is limited to devices permitted by the tailnet and its access-control policy.
-
 ## Access the dashboard
 
 Once the software has been deployed and downloaded to your device, Nginx listens on port 80 and proxies the dashboard to Grafana on its internal port 3000. The dashboard is accessible on the local IP address of the device, or via the balenaCloud public URL feature.
@@ -269,13 +213,8 @@ Before deploying, configure the following balenaCloud **Service Variables**:
 ### grafana service
 - `INFLUX_TOKEN`: set this to the same value as `DOCKER_INFLUXDB_INIT_ADMIN_TOKEN`.
 
-### tailscale service
-- `TS_AUTHKEY` (optional until Tailscale is enabled): Tailscale auth key used to enrol this Raspberry Pi. Configure it as a device-level service variable and treat it as a secret.
-- `TS_HOSTNAME` (optional): peer name shown in the tailnet. Defaults to a name derived from the balena device UUID.
-- `TS_ACCEPT_DNS` (optional): defaults to `false` in this application.
-- `TS_EXTRA_ARGS` (optional): additional supported Tailscale client arguments.
 
-The InfluxDB token/password and Tailscale auth key are intentionally not stored in this repository.
+The InfluxDB token and password are intentionally not stored in this repository.
 
 To deploy a new release with the balena CLI:
 

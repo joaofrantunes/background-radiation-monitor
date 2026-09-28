@@ -178,46 +178,59 @@ Version 1.6.1 adds device-aware diagnostics to the Nginx front end without chang
 The device UUID shown by `/device-info` can be compared with the UUID in the balena Public Device URL. This is useful when an old or different device URL is being used.
 
 
-## Resilient external access with Cloudflare Tunnel in v1.7.0
+## Stable private remote access with NetBird in v1.8.0
 
-Version 1.7.0 adds an **optional Cloudflare Tunnel** alongside the existing balena Public Device URL. The balena URL remains available for administration and fallback; the Cloudflare hostname can be used as the main public dashboard address when more persistent external access is required.
+Version 1.8.0 replaces the optional Cloudflare Tunnel integration with **NetBird private networking**. This avoids the need for a public domain and gives the Raspberry Pi a private NetBird address reachable only from authorised devices in the same NetBird network.
 
 The architecture is:
 
 ```text
-                           +--> balena Public Device URL
-Internet -----------------|
-                           +--> Cloudflare Tunnel
-                                   |
-                              cloudflared
-                                   |
-                                web:80
-                                   |
-                             Nginx reverse proxy
-                                   |
-                              Grafana :3000
+PC / phone with NetBird
+          |
+     encrypted NetBird network
+          |
+   Raspberry Pi NetBird peer
+          |
+       Nginx :80
+          |
+     Grafana :3000
 ```
 
-The Cloudflare connector uses the official `cloudflared 2026.9.1` binary, which has ARM64 support and runs without opening inbound router ports. If no tunnel token is configured, the service stays idle and the rest of the application continues to run normally.
+The existing local-IP access and balena Public Device URL remain available. NetBird is an additional access path and does not depend on balena Cloudlink for dashboard traffic.
 
-Cloudflare recommends remotely managed tunnels for Docker deployments. To enable the tunnel:
+The NetBird client is pinned to `netbirdio/netbird:0.79.0`, uses host networking, persists its state in `netbird-data`, and is given the Linux capabilities and `/dev/net/tun` device needed by the client.
 
-1. In the Cloudflare dashboard, create a remotely managed Tunnel under **Networking > Tunnels**.
-2. Add a **Published application** route for the hostname you want to use.
-3. Set the route's origin/service URL to `http://web:80`. Do **not** use `localhost:80`, because `cloudflared` runs in its own container.
-4. Copy the tunnel token from **Add a replica**.
-5. In balenaCloud, create the `CLOUDFLARE_TUNNEL_TOKEN` service variable for the **cloudflared** service. Treat this token as a secret and do not commit it to Git or paste it into logs/chat.
-6. Restart or redeploy the `cloudflared` service.
+### Enable NetBird on the Raspberry Pi
 
-Optional service variable:
+1. Create or sign in to a NetBird account.
+2. In the NetBird dashboard, create a setup key under **Settings > Setup Keys**. For one Raspberry Pi, prefer a one-use/non-reusable key where practical.
+3. In balenaCloud, add `NB_SETUP_KEY` as a **Device service variable** for the `netbird` service. Treat it as a secret: do not commit it to GitHub or paste it into logs/chat.
+4. Restart the `netbird` service. Its state is persisted in the `netbird-data` volume.
+5. Install NetBird on the PC or phone that will access the dashboard and sign in to the same NetBird account.
+6. In the NetBird dashboard, find the Raspberry Pi peer and note its NetBird IP.
+7. Open the Grafana dashboard through:
 
-- `CLOUDFLARE_LOGLEVEL`: defaults to `info`.
+```text
+http://<NETBIRD-IP>/
+```
 
-The connector exposes its Prometheus metrics internally on port `2000` and uses that endpoint for its container healthcheck. It does not publish this port to the LAN or Internet.
+The Nginx health endpoints are available through the same private IP:
 
-Recent `cloudflared` versions also run connectivity pre-checks at startup. If the network blocks both QUIC and HTTP/2 connectivity to Cloudflare on outbound port `7844`, the connector reports the problem in its logs. The local dashboard and balena Public Device URL remain independent of the optional Cloudflare service.
+```text
+http://<NETBIRD-IP>/healthz
+http://<NETBIRD-IP>/grafana-health
+http://<NETBIRD-IP>/device-info
+```
 
-If the Cloudflare hostname should not be public, protect it with Cloudflare Access rather than relying only on Grafana's anonymous Viewer mode.
+If `NB_SETUP_KEY` is not set and the peer has never been enrolled, the NetBird service stays idle so it does not disrupt the Geiger monitor.
+
+Optional NetBird service variables:
+
+- `NB_HOSTNAME`: peer name shown by NetBird. If unset, the application derives a name from the balena device UUID.
+- `NB_LOG_LEVEL`: defaults to `info`.
+- `NB_MANAGEMENT_URL`: only needed for a self-hosted NetBird management server.
+
+The NetBird setup does not expose Grafana publicly. Access is limited to peers permitted by the NetBird network and its access policies.
 
 ## Access the dashboard
 
@@ -254,11 +267,13 @@ Before deploying, configure the following balenaCloud **Service Variables**:
 ### grafana service
 - `INFLUX_TOKEN`: set this to the same value as `DOCKER_INFLUXDB_INIT_ADMIN_TOKEN`.
 
-### cloudflared service
-- `CLOUDFLARE_TUNNEL_TOKEN` (optional): secret token for a remotely managed Cloudflare Tunnel. If it is not set, Cloudflare Tunnel stays disabled and the application continues to work through local access and the balena Public Device URL.
-- `CLOUDFLARE_LOGLEVEL` (optional): Cloudflare Tunnel log level. Defaults to `info`.
+### netbird service
+- `NB_SETUP_KEY` (optional until NetBird is enabled): NetBird setup key used to enrol this Raspberry Pi as a peer. Configure it as a device-level service variable and treat it as a secret.
+- `NB_HOSTNAME` (optional): peer name shown in NetBird. Defaults to a name derived from the balena device UUID.
+- `NB_LOG_LEVEL` (optional): NetBird log level. Defaults to `info`.
+- `NB_MANAGEMENT_URL` (optional): management URL for self-hosted NetBird only.
 
-The InfluxDB token/password and Cloudflare Tunnel token are intentionally not stored in this repository.
+The InfluxDB token/password and NetBird setup key are intentionally not stored in this repository.
 
 To deploy a new release with the balena CLI:
 

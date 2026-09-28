@@ -45,6 +45,8 @@ services:
       - grafana
     ports:
       - "80:80"
+    environment:
+      BRM_VERSION: '1.6.1'
     healthcheck:
       test:
         - CMD-SHELL

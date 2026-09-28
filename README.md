@@ -178,59 +178,61 @@ Version 1.6.1 adds device-aware diagnostics to the Nginx front end without chang
 The device UUID shown by `/device-info` can be compared with the UUID in the balena Public Device URL. This is useful when an old or different device URL is being used.
 
 
-## Stable private remote access with NetBird in v1.8.0
+## Stable private remote access with Tailscale in v1.8.0
 
-Version 1.8.0 replaces the optional Cloudflare Tunnel integration with **NetBird private networking**. This avoids the need for a public domain and gives the Raspberry Pi a private NetBird address reachable only from authorised devices in the same NetBird network.
+Version 1.8.0 uses **Tailscale private networking** for stable remote dashboard access without a public domain or router port forwarding.
 
 The architecture is:
 
 ```text
-PC / phone with NetBird
+PC / phone with Tailscale
           |
-     encrypted NetBird network
+       tailnet
           |
-   Raspberry Pi NetBird peer
+ Raspberry Pi / Tailscale
           |
-       Nginx :80
+      Nginx :80
           |
-     Grafana :3000
+    Grafana :3000
 ```
 
-The existing local-IP access and balena Public Device URL remain available. NetBird is an additional access path and does not depend on balena Cloudlink for dashboard traffic.
+The local-IP access and balena Public Device URL remain available. Tailscale is an additional access path and does not depend on balena Cloudlink for dashboard traffic.
 
-The NetBird client is pinned to `netbirdio/netbird:0.79.0`, uses host networking, persists its state in `netbird-data`, and is given the Linux capabilities and `/dev/net/tun` device needed by the client.
+The Tailscale client is pinned to `tailscale/tailscale:v1.102.5`, uses kernel networking with `/dev/net/tun`, and persists its identity in the `tailscale-data` volume. `TS_AUTH_ONCE=true` prevents unnecessary re-authentication once state exists.
 
-### Enable NetBird on the Raspberry Pi
+### Enable Tailscale on the Raspberry Pi
 
-1. Create or sign in to a NetBird account.
-2. In the NetBird dashboard, create a setup key under **Settings > Setup Keys**. For one Raspberry Pi, prefer a one-use/non-reusable key where practical.
-3. In balenaCloud, add `NB_SETUP_KEY` as a **Device service variable** for the `netbird` service. Treat it as a secret: do not commit it to GitHub or paste it into logs/chat.
-4. Restart the `netbird` service. Its state is persisted in the `netbird-data` volume.
-5. Install NetBird on the PC or phone that will access the dashboard and sign in to the same NetBird account.
-6. In the NetBird dashboard, find the Raspberry Pi peer and note its NetBird IP.
+1. Create or sign in to a Tailscale account.
+2. In the Tailscale admin console, generate an auth key.
+3. In balenaCloud, add `TS_AUTHKEY` as a **Device service variable** for the `tailscale` service. Treat it as a secret: do not commit it to GitHub or paste it into logs/chat.
+4. Restart the `tailscale` service.
+5. Install Tailscale on the PC or phone that will access the dashboard and sign in to the same tailnet.
+6. In the Tailscale Machines page, find the Raspberry Pi and note its Tailscale IP or MagicDNS name.
 7. Open the Grafana dashboard through:
 
 ```text
-http://<NETBIRD-IP>/
+http://<TAILSCALE-IP>/
 ```
 
-The Nginx health endpoints are available through the same private IP:
+or, when MagicDNS is enabled in the tailnet:
 
 ```text
-http://<NETBIRD-IP>/healthz
-http://<NETBIRD-IP>/grafana-health
-http://<NETBIRD-IP>/device-info
+http://<TAILSCALE-HOSTNAME>/
 ```
 
-If `NB_SETUP_KEY` is not set and the peer has never been enrolled, the NetBird service stays idle so it does not disrupt the Geiger monitor.
+The Nginx diagnostics are available through the same private address:
 
-Optional NetBird service variables:
+```text
+http://<TAILSCALE-IP>/healthz
+http://<TAILSCALE-IP>/grafana-health
+http://<TAILSCALE-IP>/device-info
+```
 
-- `NB_HOSTNAME`: peer name shown by NetBird. If unset, the application derives a name from the balena device UUID.
-- `NB_LOG_LEVEL`: defaults to `info`.
-- `NB_MANAGEMENT_URL`: only needed for a self-hosted NetBird management server.
+If `TS_AUTHKEY` is not set and the peer has never been enrolled, the Tailscale service stays idle so it does not disrupt the Geiger monitor.
 
-The NetBird setup does not expose Grafana publicly. Access is limited to peers permitted by the NetBird network and its access policies.
+Optional Tailscale service variables include `TS_HOSTNAME`, `TS_ACCEPT_DNS`, and `TS_EXTRA_ARGS`. By default, the application derives a hostname from the balena device UUID, persists state in `/var/lib/tailscale`, and uses kernel TUN networking.
+
+This setup does not expose Grafana publicly. Access is limited to devices permitted by the tailnet and its access-control policy.
 
 ## Access the dashboard
 
@@ -267,13 +269,13 @@ Before deploying, configure the following balenaCloud **Service Variables**:
 ### grafana service
 - `INFLUX_TOKEN`: set this to the same value as `DOCKER_INFLUXDB_INIT_ADMIN_TOKEN`.
 
-### netbird service
-- `NB_SETUP_KEY` (optional until NetBird is enabled): NetBird setup key used to enrol this Raspberry Pi as a peer. Configure it as a device-level service variable and treat it as a secret.
-- `NB_HOSTNAME` (optional): peer name shown in NetBird. Defaults to a name derived from the balena device UUID.
-- `NB_LOG_LEVEL` (optional): NetBird log level. Defaults to `info`.
-- `NB_MANAGEMENT_URL` (optional): management URL for self-hosted NetBird only.
+### tailscale service
+- `TS_AUTHKEY` (optional until Tailscale is enabled): Tailscale auth key used to enrol this Raspberry Pi. Configure it as a device-level service variable and treat it as a secret.
+- `TS_HOSTNAME` (optional): peer name shown in the tailnet. Defaults to a name derived from the balena device UUID.
+- `TS_ACCEPT_DNS` (optional): defaults to `false` in this application.
+- `TS_EXTRA_ARGS` (optional): additional supported Tailscale client arguments.
 
-The InfluxDB token/password and NetBird setup key are intentionally not stored in this repository.
+The InfluxDB token/password and Tailscale auth key are intentionally not stored in this repository.
 
 To deploy a new release with the balena CLI:
 

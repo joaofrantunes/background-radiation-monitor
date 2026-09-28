@@ -17,7 +17,7 @@
   "title": "The Geiger Counter",
   "uid": "pF3gRDiRk",
   "schemaVersion": 25,
-  "version": 4,
+  "version": 5,
   "refresh": "10s",
   "time": {
     "from": "now-12h",
@@ -99,6 +99,42 @@
         }
       ],
       "description": "Moving average of the stored estimated dose-rate field. This respects the USVH_RATIO configured in the counter and no longer recalculates dose with a hard-coded factor in Grafana."
+    },
+    {
+      "id": 15,
+      "type": "timeseries",
+      "title": "Pulse rate (CPS)",
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 0,
+        "y": 16
+      },
+      "targets": [
+        {
+          "refId": "C",
+          "query": "from(bucket: \"balena-sense\") |> range(start: v.timeRangeStart, stop: v.timeRangeStop) |> filter(fn: (r) => r._measurement == \"balena-sense\" and r._field == \"cps\")"
+        }
+      ],
+      "description": "Raw pulses detected in the most recent one-second window. A stable value near 50 CPS can indicate mains-frequency interference."
+    },
+    {
+      "id": 16,
+      "type": "stat",
+      "title": "Signal anomaly (0=OK, 1=check)",
+      "gridPos": {
+        "h": 7,
+        "w": 9,
+        "x": 12,
+        "y": 16
+      },
+      "targets": [
+        {
+          "refId": "D",
+          "query": "from(bucket: \"balena-sense\") |> range(start: v.timeRangeStart, stop: v.timeRangeStop) |> filter(fn: (r) => r._measurement == \"balena-sense\" and r._field == \"signal_anomaly\") |> last()"
+        }
+      ],
+      "description": "Diagnostic flag only. A value of 1 means the counter detected no pulses for too long, a very high CPM value, or a low-variation periodic signal around mains frequency."
     }
   ],
   "style": "dark",
@@ -131,5 +167,5 @@
     ]
   },
   "timezone": "",
-  "description": "CPM is the primary detector measurement. µSv/h is an estimate calculated by the counter using its configured USVH_RATIO."
+  "description": "CPM is the primary detector measurement. µSv/h is an estimate. Diagnostic panels help identify missing pulses, high count rates and periodic electrical interference."
 }

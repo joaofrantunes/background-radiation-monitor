@@ -20,7 +20,7 @@ client = InfluxDBClient(url=url, token=token, org=org, timeout=10000)
 write_api = client.write_api(write_options=SYNCHRONOUS)
 
 PULSE_PIN = int(os.getenv("PULSE_PIN", "7"))
-GPIO_PULL = os.getenv("GPIO_PULL", "up").strip().lower()
+GPIO_PULL = os.getenv("GPIO_PULL", "off").strip().lower()
 GPIO_EDGE = os.getenv("GPIO_EDGE", "falling").strip().lower()
 
 # Default for a modern J305 glass tube specified at 44 CPS/(mR/h) with Co-60.

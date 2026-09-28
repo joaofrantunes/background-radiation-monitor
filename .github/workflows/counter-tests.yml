@@ -23,3 +23,16 @@ jobs:
 
       - name: Run counter metric tests
         run: python -m unittest discover -s counter/tests -v
+
+  nginx-config:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Validate Nginx configuration
+        run: |
+          docker run --rm \
+            --add-host grafana:127.0.0.1 \
+            -v "${{ github.workspace }}/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro" \
+            nginx:1.28-alpine nginx -t

@@ -75,6 +75,31 @@ InfluxDB writes now use a small, bounded retry loop. GPIO pulse collection conti
 
 The Grafana dashboard is renamed **Background Radiation Monitor — J305** and now shows raw plus 5-minute mean trends, textual detector status, last-pulse age, calibration status, the current CPM-to-µSv/h factor, total pulses, and counter uptime.
 
+
+## Statistical quality and testability in v1.5.0
+
+Version 1.5.0 keeps the working GPIO behavior and adds statistical context, clearer status codes, device identification, and automated tests.
+
+For a 60-second CPM window, the counter stores an approximate Poisson 1σ counting uncertainty:
+
+```text
+cpm_sigma = sqrt(CPM)
+relative_uncertainty = sqrt(CPM) / CPM
+usvh_sigma = cpm_sigma × USVH_RATIO
+```
+
+These fields describe **counting statistics only**. They do not include uncertainty in the J305 energy response, high-voltage operating point, geometry, or the CPM-to-µSv/h calibration factor. During the first 60 seconds after startup the rolling CPM window is still filling, so use `counter_ready` to distinguish warm-up data.
+
+New measurement fields include `cpm_sigma`, `cpm_relative_uncertainty`, `cpm_relative_uncertainty_pct`, `usvh_sigma`, `sensor_id`, `detector_status_code`, and `calibration_status_code`.
+
+`SENSOR_ID` can be set explicitly as a balenaCloud service variable. If it is not set, the counter uses `BALENA_DEVICE_UUID` when available, otherwise `geiger-j305`.
+
+The default no-pulse warning is now 180 seconds, making a disconnected or bad signal contact visible sooner while remaining conservative for normal background counting.
+
+Pure diagnostic/statistical functions live in `counter/metrics.py` and are covered by unit tests. A GitHub Actions workflow compiles the Python sources and tests Poisson uncertainty, warm-up/OK/no-pulse status handling, calibration status codes, and 50 Hz interference detection.
+
+The Grafana status panels now use numeric status codes with value mappings, avoiding the previous `No data` behavior seen with text-only fields on some Grafana/InfluxDB combinations.
+
 ## Software setup
 
 Running this project is as simple as deploying it to a balenaCloud application, then downloading the OS image from the dashboard and flashing your SD card.
@@ -133,13 +158,14 @@ Before deploying, configure the following balenaCloud **Service Variables**:
 - `PULSE_PIN` (optional): physical BOARD pin used for the pulse input. Defaults to `7`.
 - `GPIO_PULL` (optional): `up`, `down`, or `off`. Defaults to `off` to preserve the original working input behavior.
 - `GPIO_EDGE` (optional): `falling` or `rising`. Defaults to `falling`.
-- `NO_PULSE_WARNING_SECONDS` (optional): time with no pulses before a diagnostic warning. Defaults to `300`.
+- `NO_PULSE_WARNING_SECONDS` (optional): time with no pulses before a diagnostic warning. Defaults to `180`.
 - `HIGH_CPM_WARNING` (optional): CPM threshold for a high-count diagnostic warning. Defaults to `1000`.
 - `WARMUP_SECONDS` (optional): startup warm-up before the rolling CPM window is considered ready. Defaults to `60`.
 - `WRITE_INTERVAL_SECONDS` (optional): interval between stored measurements. Defaults to `10`.
 - `INFLUX_WRITE_RETRIES` (optional): bounded write attempts per measurement. Defaults to `3`.
 - `INFLUX_RETRY_DELAY_SECONDS` (optional): base retry delay in seconds. Defaults to `1.0`.
 - `CALIBRATION_STATUS` (optional): text stored with the measurements. Defaults to `UNCALIBRATED`.
+- `SENSOR_ID` (optional): logical sensor/device identifier stored with each measurement. Defaults to the balena device UUID when available.
 
 ### grafana service
 - `INFLUX_TOKEN`: set this to the same value as `DOCKER_INFLUXDB_INIT_ADMIN_TOKEN`.

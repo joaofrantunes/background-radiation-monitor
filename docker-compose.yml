@@ -46,7 +46,7 @@ services:
     ports:
       - "80:80"
     environment:
-      BRM_VERSION: '1.6.1'
+      BRM_VERSION: '1.7.0'
     healthcheck:
       test:
         - CMD-SHELL
@@ -55,6 +55,22 @@ services:
       timeout: 5s
       retries: 3
       start_period: 10s
+
+  cloudflared:
+    build: ./cloudflared
+    restart: always
+    depends_on:
+      - web
+    environment:
+      CLOUDFLARE_LOGLEVEL: info
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - /usr/local/bin/healthcheck.sh
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
 
   counter:
     build: ./counter

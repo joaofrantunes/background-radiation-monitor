@@ -1,7 +1,6 @@
 import datetime
 import os
 import signal
-import statistics
 import threading
 import time
 from collections import deque
@@ -9,6 +8,13 @@ from collections import deque
 import RPi.GPIO as GPIO
 from influxdb_client import InfluxDBClient, Point
 from influxdb_client.client.write_api import SYNCHRONOUS
+
+from metrics import (
+    analyze_pattern,
+    calibration_status_code,
+    detector_status,
+    poisson_uncertainty,
+)
 
 
 url = os.getenv("INFLUX_URL", "http://influxdb:8086")
@@ -30,14 +36,20 @@ GPIO_EDGE = os.getenv("GPIO_EDGE", "falling").strip().lower()
 DEFAULT_USVH_RATIO = 0.00332
 USVH_RATIO = float(os.getenv("USVH_RATIO", str(DEFAULT_USVH_RATIO)))
 GEIGER_TUBE_MODEL = os.getenv("GEIGER_TUBE_MODEL", "J305")
+SENSOR_ID = (
+    os.getenv("SENSOR_ID")
+    or os.getenv("BALENA_DEVICE_UUID")
+    or "geiger-j305"
+)
 CALIBRATION_STATUS = os.getenv(
     "CALIBRATION_STATUS",
     "UNCALIBRATED",
 ).strip() or "UNCALIBRATED"
+CALIBRATION_STATUS_CODE = calibration_status_code(CALIBRATION_STATUS)
 
 WARMUP_SECONDS = float(os.getenv("WARMUP_SECONDS", "60"))
 WRITE_INTERVAL_SECONDS = float(os.getenv("WRITE_INTERVAL_SECONDS", "10"))
-NO_PULSE_WARNING_SECONDS = int(os.getenv("NO_PULSE_WARNING_SECONDS", "300"))
+NO_PULSE_WARNING_SECONDS = int(os.getenv("NO_PULSE_WARNING_SECONDS", "180"))
 HIGH_CPM_WARNING = int(os.getenv("HIGH_CPM_WARNING", "1000"))
 MAINS_MIN_HZ = float(os.getenv("MAINS_MIN_HZ", "45"))
 MAINS_MAX_HZ = float(os.getenv("MAINS_MAX_HZ", "65"))
@@ -98,32 +110,6 @@ def request_shutdown(_signum, _frame):
     running = False
 
 
-def analyze_pattern(pulse_times):
-    if len(pulse_times) < 3:
-        return 0.0, 0.0, False
-
-    intervals = [
-        current - previous
-        for previous, current in zip(pulse_times, pulse_times[1:])
-        if current > previous
-    ]
-    if len(intervals) < 2:
-        return 0.0, 0.0, False
-
-    mean_interval = statistics.fmean(intervals)
-    if mean_interval <= 0:
-        return 0.0, 0.0, False
-
-    frequency_hz = 1.0 / mean_interval
-    interval_cv = statistics.pstdev(intervals) / mean_interval
-    looks_like_mains = (
-        len(intervals) >= 20
-        and MAINS_MIN_HZ <= frequency_hz <= MAINS_MAX_HZ
-        and interval_cv <= MAINS_MAX_CV
-    )
-    return frequency_hz, interval_cv, looks_like_mains
-
-
 def write_with_retries(point):
     global write_failures_total
 
@@ -135,7 +121,8 @@ def write_with_retries(point):
             write_failures_total += 1
             print(
                 f"[{datetime.datetime.now()}] InfluxDB write attempt "
-                f"{attempt}/{INFLUX_WRITE_RETRIES} failed: {exc}"
+                f"{attempt}/{INFLUX_WRITE_RETRIES} failed: {exc}",
+                flush=True,
             )
 
             if attempt < INFLUX_WRITE_RETRIES and running:
@@ -154,17 +141,20 @@ signal.signal(signal.SIGINT, request_shutdown)
 
 print(
     "Counter configuration -> "
+    f"sensor={SENSOR_ID}, "
     f"tube={GEIGER_TUBE_MODEL}, "
     f"pin={PULSE_PIN} (BOARD), "
     f"edge={GPIO_EDGE}, "
     f"pull={GPIO_PULL}, "
     f"CPM-to-uSv/h ratio={USVH_RATIO:.8f}, "
     f"calibration={CALIBRATION_STATUS}, "
-    f"warmup={WARMUP_SECONDS:.0f}s"
+    f"warmup={WARMUP_SECONDS:.0f}s",
+    flush=True,
 )
 print(
     "GPIO safety -> software pull resistors do not level-shift a 5 V signal. "
-    "Verify the detector output is safe for a 3.3 V Raspberry Pi GPIO."
+    "Verify the detector output is safe for a 3.3 V Raspberry Pi GPIO.",
+    flush=True,
 )
 
 try:
@@ -191,8 +181,17 @@ try:
             last_pulse_snapshot = last_pulse_at
             pulse_total_snapshot = pulse_total
 
-        pattern_hz, pattern_cv, mains_pattern = analyze_pattern(pattern_times)
+        pattern_hz, pattern_cv, mains_pattern = analyze_pattern(
+            pattern_times,
+            MAINS_MIN_HZ,
+            MAINS_MAX_HZ,
+            MAINS_MAX_CV,
+        )
         usvh = cpm * USVH_RATIO
+        cpm_sigma, cpm_relative, usvh_sigma = poisson_uncertainty(
+            cpm,
+            USVH_RATIO,
+        )
         gpio_level = int(GPIO.input(PULSE_PIN))
 
         uptime = now_monotonic - started_at
@@ -203,22 +202,23 @@ try:
             else uptime
         )
 
-        warnings = []
-        if counter_ready and last_pulse_age_s >= NO_PULSE_WARNING_SECONDS:
-            warnings.append("NO_PULSES")
-        if cpm >= HIGH_CPM_WARNING:
-            warnings.append("HIGH_CPM")
-        if mains_pattern:
-            warnings.append("POSSIBLE_MAINS_INTERFERENCE")
+        no_pulses = (
+            bool(counter_ready)
+            and last_pulse_age_s >= NO_PULSE_WARNING_SECONDS
+        )
+        high_cpm = cpm >= HIGH_CPM_WARNING
 
-        if counter_ready:
-            detector_status = ",".join(warnings) if warnings else "OK"
-        elif warnings:
-            detector_status = "WARMUP," + ",".join(warnings)
-        else:
-            detector_status = "WARMUP"
-
-        signal_anomaly = 1 if warnings else 0
+        detector_status_text, detector_status_code = detector_status(
+            bool(counter_ready),
+            no_pulses,
+            high_cpm,
+            mains_pattern,
+        )
+        signal_anomaly = (
+            1
+            if detector_status_code not in (0, 1)
+            else 0
+        )
 
         if now_monotonic >= next_write_at:
             while next_write_at <= now_monotonic:
@@ -227,11 +227,17 @@ try:
             point = (
                 Point("balena-sense")
                 .field("cpm", cpm)
+                .field("cpm_sigma", cpm_sigma)
+                .field("cpm_relative_uncertainty", cpm_relative)
+                .field("cpm_relative_uncertainty_pct", cpm_relative * 100.0)
                 .field("cps", cps)
                 .field("usvh", usvh)
+                .field("usvh_sigma", usvh_sigma)
                 .field("usvh_ratio", USVH_RATIO)
                 .field("tube_model", GEIGER_TUBE_MODEL)
+                .field("sensor_id", SENSOR_ID)
                 .field("calibration_status", CALIBRATION_STATUS)
+                .field("calibration_status_code", CALIBRATION_STATUS_CODE)
                 .field("gpio_level", gpio_level)
                 .field("counter_ready", counter_ready)
                 .field("last_pulse_age_s", last_pulse_age_s)
@@ -239,8 +245,9 @@ try:
                 .field("uptime_s", uptime)
                 .field("write_failures_total", write_failures_total)
                 .field("signal_anomaly", signal_anomaly)
-                .field("signal_warning", detector_status)
-                .field("detector_status", detector_status)
+                .field("signal_warning", detector_status_text)
+                .field("detector_status", detector_status_text)
+                .field("detector_status_code", detector_status_code)
                 .field("pattern_hz", pattern_hz)
                 .field("pattern_cv", pattern_cv)
                 .time(datetime.datetime.now(datetime.timezone.utc))
@@ -248,14 +255,21 @@ try:
 
             if write_with_retries(point):
                 print(
-                    f"[{datetime.datetime.now()}] Sent to InfluxDB -> "
-                    f"CPM: {cpm}, CPS: {cps}, "
-                    f"estimated uSv/h: {usvh:.3f}, "
-                    f"GPIO: {gpio_level}, "
-                    f"last pulse: {last_pulse_age_s:.1f}s, "
-                    f"total: {pulse_total_snapshot}, "
-                    f"status: {detector_status}, "
-                    f"pattern: {pattern_hz:.2f} Hz (CV={pattern_cv:.3f})"
+                    f"[{datetime.datetime.now()}] "
+                    f"sensor={SENSOR_ID} "
+                    f"CPM={cpm} "
+                    f"sigma={cpm_sigma:.2f} "
+                    f"rel_unc={cpm_relative * 100.0:.1f}% "
+                    f"CPS={cps} "
+                    f"est_uSv_h={usvh:.4f} "
+                    f"est_sigma={usvh_sigma:.4f} "
+                    f"GPIO={gpio_level} "
+                    f"last_pulse_s={last_pulse_age_s:.1f} "
+                    f"total={pulse_total_snapshot} "
+                    f"status={detector_status_text} "
+                    f"pattern_hz={pattern_hz:.2f} "
+                    f"pattern_cv={pattern_cv:.3f}",
+                    flush=True,
                 )
 
         time.sleep(1)

@@ -17,7 +17,7 @@
   "title": "Background Radiation Monitor — J305",
   "uid": "pF3gRDiRk",
   "schemaVersion": 25,
-  "version": 6,
+  "version": 7,
   "refresh": "10s",
   "time": {
     "from": "now-12h",
@@ -59,13 +59,11 @@
       "targets": [
         {
           "refId": "B",
-          "legendFormat": "CPM raw",
-          "query": "from(bucket: \"balena-sense\") |> range(start: v.timeRangeStart, stop: v.timeRangeStop) |> filter(fn: (r) => r._measurement == \"balena-sense\" and r._field == \"cpm\")"
+          "query": "from(bucket: \"balena-sense\") |> range(start: v.timeRangeStart, stop: v.timeRangeStop) |> filter(fn: (r) => r._measurement == \"balena-sense\" and r._field == \"cpm\") |> set(key: \"_field\", value: \"CPM raw\")"
         },
         {
           "refId": "E",
-          "legendFormat": "CPM 5 min mean",
-          "query": "from(bucket: \"balena-sense\") |> range(start: v.timeRangeStart, stop: v.timeRangeStop) |> filter(fn: (r) => r._measurement == \"balena-sense\" and r._field == \"cpm\") |> aggregateWindow(every: 5m, fn: mean, createEmpty: false)"
+          "query": "from(bucket: \"balena-sense\") |> range(start: v.timeRangeStart, stop: v.timeRangeStop) |> filter(fn: (r) => r._measurement == \"balena-sense\" and r._field == \"cpm\") |> aggregateWindow(every: 5m, fn: mean, createEmpty: false) |> set(key: \"_field\", value: \"CPM 5 min mean\")"
         }
       ],
       "description": "Raw CPM plus a 5-minute mean. The raw series preserves fast changes; the mean makes the background trend easier to read."
@@ -101,13 +99,11 @@
       "targets": [
         {
           "refId": "A",
-          "legendFormat": "Estimated µSv/h raw",
-          "query": "from(bucket: \"balena-sense\") |> range(start: v.timeRangeStart, stop: v.timeRangeStop) |> filter(fn: (r) => r._measurement == \"balena-sense\" and r._field == \"usvh\")"
+          "query": "from(bucket: \"balena-sense\") |> range(start: v.timeRangeStart, stop: v.timeRangeStop) |> filter(fn: (r) => r._measurement == \"balena-sense\" and r._field == \"usvh\") |> set(key: \"_field\", value: \"Estimated µSv/h raw\")"
         },
         {
           "refId": "F",
-          "legendFormat": "Estimated µSv/h 5 min mean",
-          "query": "from(bucket: \"balena-sense\") |> range(start: v.timeRangeStart, stop: v.timeRangeStop) |> filter(fn: (r) => r._measurement == \"balena-sense\" and r._field == \"usvh\") |> aggregateWindow(every: 5m, fn: mean, createEmpty: false)"
+          "query": "from(bucket: \"balena-sense\") |> range(start: v.timeRangeStart, stop: v.timeRangeStop) |> filter(fn: (r) => r._measurement == \"balena-sense\" and r._field == \"usvh\") |> aggregateWindow(every: 5m, fn: mean, createEmpty: false) |> set(key: \"_field\", value: \"Estimated µSv/h 5 min mean\")"
         }
       ],
       "description": "Stored estimated dose rate plus a 5-minute mean. The value is not a calibrated dose measurement unless the complete detector has been calibrated."
@@ -143,10 +139,49 @@
       "targets": [
         {
           "refId": "D",
-          "query": "from(bucket: \"balena-sense\") |> range(start: v.timeRangeStart, stop: v.timeRangeStop) |> filter(fn: (r) => r._measurement == \"balena-sense\" and r._field == \"detector_status\") |> last()"
+          "query": "from(bucket: \"balena-sense\") |> range(start: v.timeRangeStart, stop: v.timeRangeStop) |> filter(fn: (r) => r._measurement == \"balena-sense\" and r._field == \"detector_status_code\") |> last()"
         }
       ],
-      "description": "Current detector state. WARMUP is expected during the first minute after startup; NO_PULSES can indicate a disconnected or bad signal contact."
+      "description": "Current detector state. WARMUP is expected during the first minute after startup; NO_PULSES can indicate a disconnected or bad signal contact.",
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "WARMUP"
+                },
+                "1": {
+                  "text": "OK"
+                },
+                "2": {
+                  "text": "NO_PULSES"
+                },
+                "3": {
+                  "text": "HIGH_CPM"
+                },
+                "4": {
+                  "text": "POSSIBLE_MAINS_INTERFERENCE"
+                },
+                "5": {
+                  "text": "MULTIPLE_WARNINGS"
+                }
+              }
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
     },
     {
       "id": 17,
@@ -164,7 +199,30 @@
           "query": "from(bucket: \"balena-sense\") |> range(start: v.timeRangeStart, stop: v.timeRangeStop) |> filter(fn: (r) => r._measurement == \"balena-sense\" and r._field == \"last_pulse_age_s\") |> last()"
         }
       ],
-      "description": "Seconds since the most recent detected pulse. A steadily increasing value is useful for spotting a disconnected or bad contact."
+      "description": "Seconds since the most recent detected pulse. A steadily increasing value is useful for spotting a disconnected or bad contact.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 60
+              },
+              {
+                "color": "red",
+                "value": 180
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
     },
     {
       "id": 18,
@@ -179,10 +237,43 @@
       "targets": [
         {
           "refId": "H",
-          "query": "from(bucket: \"balena-sense\") |> range(start: v.timeRangeStart, stop: v.timeRangeStop) |> filter(fn: (r) => r._measurement == \"balena-sense\" and r._field == \"calibration_status\") |> last()"
+          "query": "from(bucket: \"balena-sense\") |> range(start: v.timeRangeStart, stop: v.timeRangeStop) |> filter(fn: (r) => r._measurement == \"balena-sense\" and r._field == \"calibration_status_code\") |> last()"
         }
       ],
-      "description": "UNCALIBRATED by default. Change CALIBRATION_STATUS only after calibrating the complete detector against a suitable reference instrument."
+      "description": "UNCALIBRATED by default. Change CALIBRATION_STATUS only after calibrating the complete detector against a suitable reference instrument.",
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "UNCALIBRATED"
+                },
+                "1": {
+                  "text": "CALIBRATED"
+                },
+                "2": {
+                  "text": "REFERENCE_CHECKED"
+                },
+                "-1": {
+                  "text": "UNKNOWN"
+                }
+              }
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
     },
     {
       "id": 19,
@@ -218,7 +309,21 @@
           "query": "from(bucket: \"balena-sense\") |> range(start: v.timeRangeStart, stop: v.timeRangeStop) |> filter(fn: (r) => r._measurement == \"balena-sense\" and r._field == \"pulse_total\") |> last()"
         }
       ],
-      "description": "Total pulses observed by the counter process since its last start."
+      "description": "Total pulses observed by the counter process since its last start.",
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
     },
     {
       "id": 21,
@@ -236,7 +341,121 @@
           "query": "from(bucket: \"balena-sense\") |> range(start: v.timeRangeStart, stop: v.timeRangeStop) |> filter(fn: (r) => r._measurement == \"balena-sense\" and r._field == \"uptime_s\") |> last()"
         }
       ],
-      "description": "Counter-process uptime in seconds. A reset to a small value indicates the counter service restarted."
+      "description": "Counter-process uptime in seconds. A reset to a small value indicates the counter service restarted.",
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 22,
+      "type": "stat",
+      "title": "CPM statistical uncertainty (1σ)",
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 0,
+        "y": 29
+      },
+      "targets": [
+        {
+          "refId": "L",
+          "query": "from(bucket: \"balena-sense\") |> range(start: v.timeRangeStart, stop: v.timeRangeStop) |> filter(fn: (r) => r._measurement == \"balena-sense\" and r._field == \"cpm_sigma\") |> last()"
+        }
+      ],
+      "description": "Approximate 1σ counting uncertainty for the current 60-second CPM window, using sqrt(N). This describes counting statistics only.",
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 2,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 23,
+      "type": "stat",
+      "title": "Relative statistical uncertainty",
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 8,
+        "y": 29
+      },
+      "targets": [
+        {
+          "refId": "M",
+          "query": "from(bucket: \"balena-sense\") |> range(start: v.timeRangeStart, stop: v.timeRangeStop) |> filter(fn: (r) => r._measurement == \"balena-sense\" and r._field == \"cpm_relative_uncertainty_pct\") |> last()"
+        }
+      ],
+      "description": "Approximate relative 1σ uncertainty from Poisson counting statistics. It does not include tube response or calibration uncertainty.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "decimals": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 24,
+      "type": "stat",
+      "title": "Estimated dose uncertainty (1σ, µSv/h)",
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 16,
+        "y": 29
+      },
+      "targets": [
+        {
+          "refId": "N",
+          "query": "from(bucket: \"balena-sense\") |> range(start: v.timeRangeStart, stop: v.timeRangeStop) |> filter(fn: (r) => r._measurement == \"balena-sense\" and r._field == \"usvh_sigma\") |> last()"
+        }
+      ],
+      "description": "Counting-statistics contribution only. The uncertainty of the J305 conversion factor is additional and is not included until calibration.",
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 4,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
     }
   ],
   "style": "dark",
@@ -269,5 +488,5 @@
     ]
   },
   "timezone": "",
-  "description": "J305 background-radiation monitor. CPM is the primary detector measurement; µSv/h remains an estimate until the complete detector is calibrated. Diagnostic panels highlight signal/contact problems."
+  "description": "J305 background-radiation monitor with signal diagnostics and Poisson counting uncertainty. CPM is the primary measurement; µSv/h remains an estimate until the complete detector is calibrated."
 }

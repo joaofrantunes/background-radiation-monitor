@@ -1,0 +1,25 @@
+name: Counter tests
+
+on:
+  pull_request:
+  push:
+    branches:
+      - master
+
+jobs:
+  counter-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Compile Python sources
+        run: python -m py_compile counter/counter.py counter/metrics.py
+
+      - name: Run counter metric tests
+        run: python -m unittest discover -s counter/tests -v

@@ -274,6 +274,35 @@ The GitHub Actions workflow now uses Python 3.11 and additionally builds the cou
 No database migration is introduced. The existing `sense-data` and `grafana-data` volumes keep the same paths and must not be deleted during the update.
 
 
+
+## External-context resilience and diagnostics in v1.11.2
+
+Version 1.11.2 makes the NOAA/Open-Meteo collector fail independently by source instead of failing the entire cycle when one upstream feed is unavailable.
+
+Each cycle now treats these sources independently:
+
+- observed planetary Kp;
+- Kp forecast;
+- solar-wind plasma;
+- solar-wind magnetic field / IMF Bz;
+- Dst;
+- GOES >=10 MeV proton flux;
+- geolocated Open-Meteo weather.
+
+A failed source is logged as `status=ERROR` while successful sources are still written to InfluxDB. The collector emits a startup line showing its version, refresh interval, whether an Influx token is configured, and the weather location mode; it never prints the token itself.
+
+Every cycle also writes an `external-context-status` measurement with:
+
+- `status_code`: `2=OK`, `1=PARTIAL`, `0=NO_EXTERNAL_DATA`;
+- `sources_ok`;
+- `sources_failed`;
+- `sources_total`;
+- `influx_token_configured`;
+- collector `version`.
+
+The Grafana dashboard includes an **External Data Collector Health** section so missing external data is no longer represented only as unexplained `No data`.
+
+
 ## Access the dashboard
 
 Once the software has been deployed and downloaded to your device, Nginx listens on port 80 and proxies the dashboard to Grafana on its internal port 3000. The dashboard is accessible on the local IP address of the device, or via the balenaCloud public URL feature.

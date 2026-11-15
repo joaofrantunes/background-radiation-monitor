@@ -17,7 +17,7 @@
   "title": "Background Radiation Monitor — J305",
   "uid": "pF3gRDiRk",
   "schemaVersion": 25,
-  "version": 9,
+  "version": 10,
   "refresh": "10s",
   "time": {
     "from": "now-12h",
@@ -992,6 +992,200 @@
         }
       ],
       "description": "Location used for Open-Meteo. location_source=ip means approximate public-IP geolocation; manual means WEATHER_LATITUDE/WEATHER_LONGITUDE were supplied."
+    },
+    {
+      "id": 46,
+      "type": "row",
+      "title": "External Data Collector Health",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 98
+      },
+      "panels": []
+    },
+    {
+      "id": 47,
+      "type": "stat",
+      "title": "External collector status",
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 0,
+        "y": 99
+      },
+      "targets": [
+        {
+          "refId": "EXT1",
+          "query": "from(bucket: \"balena-sense\") |> range(start: -24h) |> filter(fn: (r) => r._measurement == \"external-context-status\" and r._field == \"status_code\") |> last()"
+        }
+      ],
+      "description": "Overall health of the NOAA/Open-Meteo collector. 2=OK, 1=PARTIAL, 0=NO EXTERNAL DATA.",
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 0,
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "NO EXTERNAL DATA"
+                },
+                "1": {
+                  "text": "PARTIAL"
+                },
+                "2": {
+                  "text": "OK"
+                }
+              }
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 1
+              },
+              {
+                "color": "green",
+                "value": 2
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 48,
+      "type": "stat",
+      "title": "External sources OK",
+      "gridPos": {
+        "h": 6,
+        "w": 4,
+        "x": 8,
+        "y": 99
+      },
+      "targets": [
+        {
+          "refId": "EXT2",
+          "query": "from(bucket: \"balena-sense\") |> range(start: -24h) |> filter(fn: (r) => r._measurement == \"external-context-status\" and r._field == \"sources_ok\") |> last()"
+        }
+      ],
+      "description": "Number of external feeds that succeeded in the most recent collector cycle.",
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 0,
+          "min": 0,
+          "max": 7
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 49,
+      "type": "stat",
+      "title": "External sources failed",
+      "gridPos": {
+        "h": 6,
+        "w": 4,
+        "x": 12,
+        "y": 99
+      },
+      "targets": [
+        {
+          "refId": "EXT3",
+          "query": "from(bucket: \"balena-sense\") |> range(start: -24h) |> filter(fn: (r) => r._measurement == \"external-context-status\" and r._field == \"sources_failed\") |> last()"
+        }
+      ],
+      "description": "Number of external feeds that failed in the most recent collector cycle.",
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 0,
+          "min": 0,
+          "max": 7,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 1
+              },
+              {
+                "color": "red",
+                "value": 4
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 50,
+      "type": "stat",
+      "title": "Influx token configured",
+      "gridPos": {
+        "h": 6,
+        "w": 4,
+        "x": 16,
+        "y": 99
+      },
+      "targets": [
+        {
+          "refId": "EXT4",
+          "query": "from(bucket: \"balena-sense\") |> range(start: -24h) |> filter(fn: (r) => r._measurement == \"external-context-status\" and r._field == \"influx_token_configured\") |> last()"
+        }
+      ],
+      "description": "Collector-side confirmation that INFLUX_TOKEN is configured. The token value is never stored.",
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 0,
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "NO"
+                },
+                "1": {
+                  "text": "YES"
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 51,
+      "type": "stat",
+      "title": "Collector version",
+      "gridPos": {
+        "h": 6,
+        "w": 4,
+        "x": 20,
+        "y": 99
+      },
+      "targets": [
+        {
+          "refId": "EXT5",
+          "query": "from(bucket: \"balena-sense\") |> range(start: -24h) |> filter(fn: (r) => r._measurement == \"external-context-status\" and r._field == \"version\") |> last()"
+        }
+      ],
+      "description": "Version reported by the external-context collector."
     }
   ],
   "style": "dark",
@@ -1024,5 +1218,5 @@
     ]
   },
   "timezone": "",
-  "description": "J305 background-radiation monitor with signal diagnostics, Poisson counting uncertainty, NOAA SWPC planetary Kp/solar-wind/Dst/proton context, and automatically geolocated Open-Meteo weather context. CPM remains the primary radiation measurement."
+  "description": "J305 background-radiation monitor with signal diagnostics, Poisson counting uncertainty, resilient NOAA SWPC/Open-Meteo context collection, and explicit external-collector health status. CPM remains the primary radiation measurement."
 }

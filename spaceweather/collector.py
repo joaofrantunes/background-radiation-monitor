@@ -1,5 +1,6 @@
 import datetime
 import json
+import math
 import os
 import time
 import urllib.parse
@@ -21,11 +22,11 @@ KP_FORECAST_URL = os.getenv(
 )
 SOLAR_WIND_PLASMA_URL = os.getenv(
     "NOAA_SOLAR_WIND_PLASMA_URL",
-    "https://services.swpc.noaa.gov/products/solar-wind/plasma-7-day.json",
+    "https://services.swpc.noaa.gov/json/rtsw/rtsw_wind_1m.json",
 )
 SOLAR_WIND_MAG_URL = os.getenv(
     "NOAA_SOLAR_WIND_MAG_URL",
-    "https://services.swpc.noaa.gov/products/solar-wind/mag-7-day.json",
+    "https://services.swpc.noaa.gov/json/rtsw/rtsw_mag_1m.json",
 )
 DST_URL = os.getenv(
     "NOAA_DST_URL",
@@ -116,6 +117,9 @@ def parse_float(value, minimum=None, maximum=None):
 
     number = float(value)
 
+    if not math.isfinite(number):
+        raise ValueError(f"Non-finite numeric value: {value}")
+
     if minimum is not None and number < minimum:
         raise ValueError(f"Value below minimum: {number}")
     if maximum is not None and number > maximum:
@@ -171,17 +175,45 @@ def fetch_json(url):
         return json.load(response)
 
 
-def latest_valid_row(payload, required_fields):
+def first_value(row, field):
+    if isinstance(field, tuple):
+        for name in field:
+            value = row.get(name)
+            if value not in (None, ""):
+                return value
+        return None
+    return row.get(field)
+
+
+def is_active_value(value):
+    if value is True or value == 1:
+        return True
+    return str(value).strip().lower() in ("true", "1", "yes")
+
+
+def latest_valid_row(payload, required_fields, prefer_active=False):
     rows = normalize_rows(payload)
-    for row in reversed(rows):
+
+    if prefer_active and any("active" in row for row in rows):
+        rows = [
+            row
+            for row in rows
+            if is_active_value(row.get("active"))
+        ]
+
+    best = None
+    for row in rows:
         try:
-            parse_timestamp(row.get("time_tag"))
+            timestamp = parse_timestamp(row.get("time_tag"))
             for field in required_fields:
-                parse_float(row.get(field))
-            return row
+                parse_float(first_value(row, field))
         except (TypeError, ValueError):
             continue
-    return None
+
+        if best is None or timestamp > best[0]:
+            best = (timestamp, row)
+
+    return best[1] if best is not None else None
 
 
 def observed_points(payload):
@@ -241,20 +273,28 @@ def forecast_points(payload):
 
 
 def solar_plasma_point(payload):
-    row = latest_valid_row(payload, ("speed",))
+    row = latest_valid_row(
+        payload,
+        (("proton_speed", "speed"),),
+        prefer_active=True,
+    )
     if row is None:
         return None
 
     point = (
         Point("space-weather-solar-wind")
         .tag("provider", "NOAA_SWPC")
+        .tag("source", str(row.get("source") or "unknown"))
         .field(
             "speed_km_s",
-            parse_float(row.get("speed"), minimum=0.0),
+            parse_float(
+                first_value(row, ("proton_speed", "speed")),
+                minimum=0.0,
+            ),
         )
     )
 
-    density = row.get("density")
+    density = first_value(row, ("proton_density", "density"))
     if density not in (None, ""):
         point = point.field(
             "density_p_cm3",
@@ -265,13 +305,18 @@ def solar_plasma_point(payload):
 
 
 def solar_magnetic_point(payload):
-    row = latest_valid_row(payload, ("bz_gsm",))
+    row = latest_valid_row(
+        payload,
+        ("bz_gsm",),
+        prefer_active=True,
+    )
     if row is None:
         return None
 
     point = (
         Point("space-weather-solar-wind")
         .tag("provider", "NOAA_SWPC")
+        .tag("source", str(row.get("source") or "unknown"))
         .field("bz_gsm_nt", parse_float(row.get("bz_gsm")))
     )
 
@@ -446,11 +491,11 @@ def weather_point(payload, location):
     )
 
     if location["city"]:
-        point = point.field("city", location["city"])
+        point = point.tag("location_city", location["city"])
     if location["region"]:
-        point = point.field("region", location["region"])
+        point = point.tag("location_region", location["region"])
     if location["country"]:
-        point = point.field("country", location["country"])
+        point = point.tag("location_country", location["country"])
 
     return point.time(timestamp)
 

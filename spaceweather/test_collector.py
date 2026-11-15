@@ -6,6 +6,7 @@ from collector import (
     collect_points,
     forecast_status,
     normalize_rows,
+    parse_float,
     parse_kp,
     proton_point,
     solar_magnetic_point,
@@ -51,18 +52,39 @@ class ExternalContextParsingTests(unittest.TestCase):
             "predicted",
         )
 
-    def test_solar_wind_parses_table_feeds(self):
+    def test_solar_wind_parses_current_rtsw_feeds(self):
         plasma = [
-            ["time_tag", "density", "speed", "temperature"],
-            ["2026-11-15 20:00:00.000", "5.0", "410.2", "90000"],
+            {
+                "time_tag": "2026-11-15T20:00:00Z",
+                "source": "DSCOVR",
+                "active": True,
+                "proton_density": 5.0,
+                "proton_speed": 410.2,
+            },
+            {
+                "time_tag": "2026-11-15T20:01:00Z",
+                "source": "ACE",
+                "active": False,
+                "proton_density": 9.0,
+                "proton_speed": 999.0,
+            },
         ]
         magnetic = [
-            ["time_tag", "bx_gsm", "by_gsm", "bz_gsm", "lon_gsm", "lat_gsm", "bt"],
-            ["2026-11-15 20:00:00.000", "1", "2", "-3.5", "0", "0", "5.2"],
+            {
+                "time_tag": "2026-11-15T20:00:00Z",
+                "source": "DSCOVR",
+                "active": True,
+                "bz_gsm": -3.5,
+                "bt": 5.2,
+            }
         ]
         self.assertIsNotNone(solar_plasma_point(plasma))
         self.assertIsNotNone(solar_magnetic_point(magnetic))
         self.assertIsNotNone(solar_wind_point(plasma, magnetic))
+
+    def test_parse_float_rejects_nan(self):
+        with self.assertRaises(ValueError):
+            parse_float("NaN")
 
     def test_proton_selects_10_mev_channel(self):
         payload = [

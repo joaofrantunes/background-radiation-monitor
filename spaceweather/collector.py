@@ -9,6 +9,8 @@ from influxdb_client import InfluxDBClient, Point
 from influxdb_client.client.write_api import SYNCHRONOUS
 
 
+APP_VERSION = "1.11.2"
+
 KP_OBSERVED_URL = os.getenv(
     "NOAA_KP_OBSERVED_URL",
     "https://services.swpc.noaa.gov/products/noaa-planetary-k-index.json",
@@ -62,6 +64,14 @@ INFLUX_URL = os.getenv("INFLUX_URL", "http://influxdb:8086")
 INFLUX_TOKEN = os.getenv("INFLUX_TOKEN")
 INFLUX_ORG = os.getenv("INFLUX_ORG", "balena")
 INFLUX_BUCKET = os.getenv("INFLUX_BUCKET", "balena-sense")
+
+
+def utc_now():
+    return datetime.datetime.now(datetime.timezone.utc)
+
+
+def log(message):
+    print(f"[{utc_now().isoformat()}] {message}", flush=True)
 
 
 def normalize_rows(payload):
@@ -151,7 +161,7 @@ def fetch_json(url):
         url,
         headers={
             "Accept": "application/json",
-            "User-Agent": "background-radiation-monitor/1.10.0",
+            "User-Agent": f"background-radiation-monitor/{APP_VERSION}",
         },
     )
     with urllib.request.urlopen(
@@ -230,55 +240,55 @@ def forecast_points(payload):
     return points
 
 
-def solar_wind_point(plasma_payload, magnetic_payload):
-    plasma = latest_valid_row(
-        plasma_payload,
-        ("speed",),
-    )
-    magnetic = latest_valid_row(
-        magnetic_payload,
-        ("bz_gsm",),
-    )
-
-    if plasma is None and magnetic is None:
+def solar_plasma_point(payload):
+    row = latest_valid_row(payload, ("speed",))
+    if row is None:
         return None
-
-    timestamps = []
-    if plasma is not None:
-        timestamps.append(parse_timestamp(plasma["time_tag"]))
-    if magnetic is not None:
-        timestamps.append(parse_timestamp(magnetic["time_tag"]))
 
     point = (
         Point("space-weather-solar-wind")
         .tag("provider", "NOAA_SWPC")
+        .field(
+            "speed_km_s",
+            parse_float(row.get("speed"), minimum=0.0),
+        )
     )
 
-    if plasma is not None:
+    density = row.get("density")
+    if density not in (None, ""):
         point = point.field(
-            "speed_km_s",
-            parse_float(plasma.get("speed"), minimum=0.0),
+            "density_p_cm3",
+            parse_float(density, minimum=0.0),
         )
-        density = plasma.get("density")
-        if density not in (None, ""):
-            point = point.field(
-                "density_p_cm3",
-                parse_float(density, minimum=0.0),
-            )
 
-    if magnetic is not None:
+    return point.time(parse_timestamp(row.get("time_tag")))
+
+
+def solar_magnetic_point(payload):
+    row = latest_valid_row(payload, ("bz_gsm",))
+    if row is None:
+        return None
+
+    point = (
+        Point("space-weather-solar-wind")
+        .tag("provider", "NOAA_SWPC")
+        .field("bz_gsm_nt", parse_float(row.get("bz_gsm")))
+    )
+
+    bt = row.get("bt")
+    if bt not in (None, ""):
         point = point.field(
-            "bz_gsm_nt",
-            parse_float(magnetic.get("bz_gsm")),
+            "bt_nt",
+            parse_float(bt, minimum=0.0),
         )
-        bt = magnetic.get("bt")
-        if bt not in (None, ""):
-            point = point.field(
-                "bt_nt",
-                parse_float(bt, minimum=0.0),
-            )
 
-    return point.time(max(timestamps))
+    return point.time(parse_timestamp(row.get("time_tag")))
+
+
+def solar_wind_point(plasma_payload, magnetic_payload):
+    plasma = solar_plasma_point(plasma_payload)
+    magnetic = solar_magnetic_point(magnetic_payload)
+    return plasma or magnetic
 
 
 def dst_point(payload):
@@ -445,48 +455,122 @@ def weather_point(payload, location):
     return point.time(timestamp)
 
 
+def as_points(value):
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return [point for point in value if point is not None]
+    return [value]
+
+
+def collect_source(name, callback, points, statuses):
+    try:
+        produced = as_points(callback())
+        if not produced:
+            raise RuntimeError("no valid points returned")
+
+        points.extend(produced)
+        statuses[name] = 1
+        log(f"source={name} status=OK points={len(produced)}")
+    except Exception as exc:
+        statuses[name] = 0
+        log(
+            f"source={name} status=ERROR "
+            f"error={type(exc).__name__}: {exc}"
+        )
+
+
+def collect_weather():
+    location = resolve_location()
+    log(f"weather location source={location['source']}")
+    return weather_point(
+        fetch_json(weather_url(location)),
+        location,
+    )
+
+
+def status_point(statuses):
+    sources_ok = sum(statuses.values())
+    sources_total = len(statuses)
+    sources_failed = sources_total - sources_ok
+
+    if sources_ok == 0:
+        status_code = 0
+        status_text = "NO_EXTERNAL_DATA"
+    elif sources_failed:
+        status_code = 1
+        status_text = "PARTIAL"
+    else:
+        status_code = 2
+        status_text = "OK"
+
+    return (
+        Point("external-context-status")
+        .tag("collector", "spaceweather")
+        .field("status_code", status_code)
+        .field("status_text", status_text)
+        .field("sources_ok", sources_ok)
+        .field("sources_failed", sources_failed)
+        .field("sources_total", sources_total)
+        .field("influx_token_configured", 1 if INFLUX_TOKEN else 0)
+        .field("version", APP_VERSION)
+        .time(utc_now())
+    )
+
+
 def collect_points():
     points = []
+    statuses = {}
 
-    points.extend(observed_points(fetch_json(KP_OBSERVED_URL)))
-    points.extend(forecast_points(fetch_json(KP_FORECAST_URL)))
-
-    solar = solar_wind_point(
-        fetch_json(SOLAR_WIND_PLASMA_URL),
-        fetch_json(SOLAR_WIND_MAG_URL),
+    collect_source(
+        "kp_observed",
+        lambda: observed_points(fetch_json(KP_OBSERVED_URL)),
+        points,
+        statuses,
     )
-    if solar is not None:
-        points.append(solar)
+    collect_source(
+        "kp_forecast",
+        lambda: forecast_points(fetch_json(KP_FORECAST_URL)),
+        points,
+        statuses,
+    )
+    collect_source(
+        "solar_plasma",
+        lambda: solar_plasma_point(fetch_json(SOLAR_WIND_PLASMA_URL)),
+        points,
+        statuses,
+    )
+    collect_source(
+        "solar_magnetic",
+        lambda: solar_magnetic_point(fetch_json(SOLAR_WIND_MAG_URL)),
+        points,
+        statuses,
+    )
+    collect_source(
+        "dst",
+        lambda: dst_point(fetch_json(DST_URL)),
+        points,
+        statuses,
+    )
+    collect_source(
+        "goes_protons",
+        lambda: proton_point(fetch_json(PROTON_URL)),
+        points,
+        statuses,
+    )
+    collect_source(
+        "weather",
+        collect_weather,
+        points,
+        statuses,
+    )
 
-    dst = dst_point(fetch_json(DST_URL))
-    if dst is not None:
-        points.append(dst)
-
-    proton = proton_point(fetch_json(PROTON_URL))
-    if proton is not None:
-        points.append(proton)
-
-    try:
-        location = resolve_location()
-        weather = weather_point(
-            fetch_json(weather_url(location)),
-            location,
-        )
-        points.append(weather)
-    except Exception as exc:
-        print(
-            f"Weather context unavailable: {exc}",
-            flush=True,
-        )
-
-    return points
+    return points, statuses
 
 
 def run_once(write_api):
-    points = collect_points()
-
-    if not points:
-        raise RuntimeError("No valid external context data were collected")
+    points, statuses = collect_points()
+    points.append(status_point(statuses))
 
     write_api.write(
         bucket=INFLUX_BUCKET,
@@ -494,14 +578,25 @@ def run_once(write_api):
         record=points,
     )
 
-    now = datetime.datetime.now(datetime.timezone.utc).isoformat()
-    print(
-        f"[{now}] External context update: {len(points)} points written",
-        flush=True,
+    sources_ok = sum(statuses.values())
+    sources_failed = len(statuses) - sources_ok
+    log(
+        "External context update complete -> "
+        f"points={len(points)}, "
+        f"sources_ok={sources_ok}, "
+        f"sources_failed={sources_failed}"
     )
 
 
 def main():
+    log(
+        "External context collector starting -> "
+        f"version={APP_VERSION}, "
+        f"interval={FETCH_INTERVAL_SECONDS}s, "
+        f"token_configured={'yes' if INFLUX_TOKEN else 'no'}, "
+        f"weather_location_mode={WEATHER_LOCATION_MODE}"
+    )
+
     if not INFLUX_TOKEN:
         raise RuntimeError(
             "INFLUX_TOKEN is required to write external context to InfluxDB"
@@ -520,12 +615,9 @@ def main():
             try:
                 run_once(write_api)
             except Exception as exc:
-                now = datetime.datetime.now(
-                    datetime.timezone.utc
-                ).isoformat()
-                print(
-                    f"[{now}] External context update failed: {exc}",
-                    flush=True,
+                log(
+                    "External context cycle failed -> "
+                    f"{type(exc).__name__}: {exc}"
                 )
 
             time.sleep(FETCH_INTERVAL_SECONDS)

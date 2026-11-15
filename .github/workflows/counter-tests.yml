@@ -35,7 +35,7 @@ jobs:
           docker run --rm \
             --add-host grafana:127.0.0.1 \
             -e BALENA_DEVICE_UUID=test-device \
-            -e BRM_VERSION=1.11.1 \
+            -e BRM_VERSION=1.11.2 \
             -v "${{ github.workspace }}/nginx/default.conf.template:/etc/nginx/templates/default.conf.template:ro" \
             nginx:1.30.6-alpine nginx -t
 

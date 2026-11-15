@@ -491,11 +491,11 @@ def weather_point(payload, location):
     )
 
     if location["city"]:
-        point = point.tag("location_city", location["city"])
+        point = point.field("city", location["city"])
     if location["region"]:
-        point = point.tag("location_region", location["region"])
+        point = point.field("region", location["region"])
     if location["country"]:
-        point = point.tag("location_country", location["country"])
+        point = point.field("country", location["country"])
 
     return point.time(timestamp)
 

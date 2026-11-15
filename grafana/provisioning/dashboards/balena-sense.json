@@ -568,7 +568,7 @@
       },
       "options": {
         "mode": "markdown",
-        "content": "**NOAA planetary Kp scale**\\n\\nKp < 5: below geomagnetic storm level  \nKp 5: G1  •  Kp 6: G2  •  Kp 7: G3  •  Kp 8 / 9−: G4  •  Kp 9o: G5\\n\\nSource: NOAA / NWS Space Weather Prediction Center. Data are fetched from the official observed and 3-day forecast JSON products."
+        "content": "**NOAA planetary Kp scale**\n\nKp < 5: below geomagnetic storm level  \nKp 5: G1  •  Kp 6: G2  •  Kp 7: G3  •  Kp 8 / 9−: G4  •  Kp 9o: G5\n\nSource: NOAA / NWS Space Weather Prediction Center. Data are fetched from the official observed and 3-day forecast JSON products."
       }
     },
     {

@@ -303,6 +303,25 @@ Every cycle also writes an `external-context-status` measurement with:
 The Grafana dashboard includes an **External Data Collector Health** section so missing external data is no longer represented only as unexplained `No data`.
 
 
+
+## Grafana persistent-volume permission recovery in v1.11.3
+
+Version 1.11.3 fixes a Grafana restart loop that can occur when an existing
+`grafana-data` volume is owned by a different UID/GID than the Grafana 12
+container user.
+
+The Grafana container now starts with a minimal permission bootstrap that:
+
+- preserves the existing `grafana-data` volume and all files in it;
+- ensures `/var/lib/grafana` is writable by the `grafana` user;
+- immediately drops privileges with `su-exec`;
+- runs the official Grafana `/run.sh` as the non-root `grafana` user.
+
+The bootstrap does not delete, recreate, or migrate the Grafana volume. The
+counter, GPIO configuration, InfluxDB data, and external-context collector are
+unchanged.
+
+
 ## Access the dashboard
 
 Once the software has been deployed and downloaded to your device, Nginx listens on port 80 and proxies the dashboard to Grafana on its internal port 3000. The dashboard is accessible on the local IP address of the device, or via the balenaCloud public URL feature.

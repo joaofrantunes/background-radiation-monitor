@@ -1,6 +1,6 @@
 name: Background Radiation Monitor
 type: sw.application
-version: 1.11.3
+version: 1.11.4
 
 data:
   defaultDeviceType: raspberrypi3-64

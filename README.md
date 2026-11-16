@@ -322,6 +322,25 @@ counter, GPIO configuration, InfluxDB data, and external-context collector are
 unchanged.
 
 
+
+## Grafana runtime UID/GID compatibility in v1.11.4
+
+Version 1.11.4 corrects the v1.11.3 bootstrap for Grafana images where the
+`grafana` user does not have a group literally named `grafana`.
+
+The permission bootstrap now resolves the Grafana account numerically at
+runtime with `id -u grafana` and `id -g grafana`. It applies those numeric
+IDs to the existing `grafana-data` volume and then starts the official Grafana
+`/run.sh` with the same UID/GID through `su-exec`.
+
+CI now also starts Grafana against a deliberately root-owned Docker volume and
+requires `/api/health` to become reachable. This exercises the same permission
+recovery path that is required on upgraded balena devices.
+
+No Grafana data is deleted or recreated. Radiation counting, GPIO behavior,
+InfluxDB data, and the external-context collector are unchanged.
+
+
 ## Access the dashboard
 
 Once the software has been deployed and downloaded to your device, Nginx listens on port 80 and proxies the dashboard to Grafana on its internal port 3000. The dashboard is accessible on the local IP address of the device, or via the balenaCloud public URL feature.

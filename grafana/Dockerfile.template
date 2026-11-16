@@ -2,7 +2,12 @@ FROM grafana/grafana:12.4.15
 
 USER root
 
+RUN apk add --no-cache su-exec
+
 COPY ./grafana.ini /etc/grafana/grafana.ini
 COPY ./provisioning /usr/src/app/provisioning
+COPY ./volume-entrypoint.sh /usr/local/bin/brm-grafana-entrypoint
 
-USER grafana
+RUN chmod 0755 /usr/local/bin/brm-grafana-entrypoint
+
+ENTRYPOINT ["/usr/local/bin/brm-grafana-entrypoint"]

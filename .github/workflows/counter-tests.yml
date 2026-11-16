@@ -35,7 +35,7 @@ jobs:
           docker run --rm \
             --add-host grafana:127.0.0.1 \
             -e BALENA_DEVICE_UUID=test-device \
-            -e BRM_VERSION=1.11.3 \
+            -e BRM_VERSION=1.11.4 \
             -v "${{ github.workspace }}/nginx/default.conf.template:/etc/nginx/templates/default.conf.template:ro" \
             nginx:1.30.6-alpine nginx -t
 
@@ -85,7 +85,32 @@ jobs:
             'test -r /etc/grafana/grafana.ini && \
              test -r /usr/src/app/provisioning/dashboards/balena-sense.json && \
              test -x /usr/local/bin/brm-grafana-entrypoint && \
-             command -v su-exec >/dev/null'
+             command -v su-exec >/dev/null && \
+             id -u grafana >/dev/null && \
+             id -g grafana >/dev/null'
+
+      - name: Verify Grafana starts with a root-owned persistent volume
+        run: |
+          docker volume create brm-grafana-test-data
+          docker run --rm -v brm-grafana-test-data:/var/lib/grafana alpine:3.22 \
+            sh -c 'touch /var/lib/grafana/root-owned-marker && chown -R 0:0 /var/lib/grafana'
+          docker run -d --name brm-grafana-runtime \
+            -e GF_PATHS_CONFIG=/etc/grafana/grafana.ini \
+            -e GF_PATHS_PROVISIONING=/usr/src/app/provisioning \
+            -e GF_ANALYTICS_REPORTING_ENABLED=false \
+            -e GF_ANALYTICS_CHECK_FOR_UPDATES=false \
+            -v brm-grafana-test-data:/var/lib/grafana \
+            brm-grafana-test
+          for i in $(seq 1 30); do
+            if docker exec brm-grafana-runtime wget -q -O /dev/null http://127.0.0.1:3000/api/health; then
+              break
+            fi
+            sleep 1
+          done
+          docker exec brm-grafana-runtime wget -q -O /dev/null http://127.0.0.1:3000/api/health
+          docker logs brm-grafana-runtime
+          docker rm -f brm-grafana-runtime
+          docker volume rm brm-grafana-test-data
 
       - name: Verify pinned runtime versions
         run: |
